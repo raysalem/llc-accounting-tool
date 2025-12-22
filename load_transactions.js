@@ -147,7 +147,7 @@ Example:
     targetSheet.getCell(`${amtCol}2`).font = { bold: true, italic: true };
 
     // Explicitly disable worksheet-level autofilter to avoid conflicts with Table-level filters
-    targetSheet.autoFilter = null;
+    // targetSheet.autoFilter = null; // Removed to prevent corruption
 
     const records = [];
 
