@@ -38,3 +38,9 @@ From the project root:
 ```bash
 node tests/run_integration_test.js
 ```
+
+### Detailed Integrity Reporting
+When running the financial update, you can use the `--checker` flag to see exact row numbers and details for any data integrity issues:
+```bash
+node update_financials.js --checker
+```

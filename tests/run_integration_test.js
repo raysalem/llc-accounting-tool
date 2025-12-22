@@ -60,8 +60,8 @@ async function runTest() {
 
     await workbook.xlsx.writeFile(TEST_FILE);
 
-    console.log('\n--- Phase 6: Run Financial Report ---');
-    execSync(`node update_financials.js ${TEST_FILE} --print-only --pl --bs`, { stdio: 'inherit' });
+    console.log('\n--- Phase 6: Run Financial Report (with Checker) ---');
+    execSync(`node update_financials.js ${TEST_FILE} --print-only --pl --bs --checker`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 7: Save Test Artifact ---');
     const ARTIFACT_PATH = 'tests/Full_Accounting_Test_Case.xlsx';
