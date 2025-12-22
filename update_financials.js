@@ -10,8 +10,9 @@ async function updateFinancials() {
     const showVendor = args.includes('--vendor');
     const showCustomer = args.includes('--customer');
     const showPLSub = args.includes('--pl-sub');
+    const showChecker = args.includes('--checker');
 
-    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub;
+    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker;
     const showAll = printOnly && !specificFilter;
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
@@ -95,9 +96,10 @@ async function updateFinancials() {
     let uncategorizedBank = 0;
     let uncategorizedCC = 0;
 
-    const illegalCategories = new Set();
-    const illegalVendors = new Set();
-    const illegalCustomers = new Set();
+    const illegalCategories = [];
+    const illegalVendors = [];
+    const illegalCustomers = [];
+    const uncategorizedDetails = [];
 
     const bankMap = { date: 1, desc: 2, amount: 3, category: 4, subCat: 5, vendor: 7, customer: 8 };
     const ccMap = { date: 1, desc: 3, amount: 4, category: 5, subCat: 6, vendor: 8, customer: 9 };
@@ -130,9 +132,12 @@ async function updateFinancials() {
         // --- Integrity Checks ---
         if (!category && Math.abs(amount) > 0.01) {
             if (isCC) uncategorizedCC++; else uncategorizedBank++;
+            uncategorizedDetails.push({ sheet: processingType, row: row.number, desc: rawDesc });
         } else if (category) {
             const catStr = category.toString().trim();
-            if (!validCategories.has(catStr)) illegalCategories.add(catStr);
+            if (!validCategories.has(catStr)) {
+                illegalCategories.push({ value: catStr, sheet: processingType, row: row.number });
+            }
 
             if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
             catStats[catStr].total += amount;
@@ -143,13 +148,13 @@ async function updateFinancials() {
 
         if (vendor) {
             const vStr = vendor.toString().trim();
-            if (!validVendors.has(vStr)) illegalVendors.add(vStr);
+            if (!validVendors.has(vStr)) illegalVendors.push({ value: vStr, sheet: processingType, row: row.number });
             vendorStats[vStr] = (vendorStats[vStr] || 0) + amount;
         }
 
         if (customer) {
             const cStr = customer.toString().trim();
-            if (!validCustomers.has(cStr)) illegalCustomers.add(cStr);
+            if (!validCustomers.has(cStr)) illegalCustomers.push({ value: cStr, sheet: processingType, row: row.number });
             customerStats[cStr] = (customerStats[cStr] || 0) + amount;
         }
     }
@@ -174,7 +179,7 @@ async function updateFinancials() {
         const cr = row.getCell(5).value || 0;
         if (cat) {
             const catStr = cat.toString().trim();
-            if (!validCategories.has(catStr)) illegalCategories.add(catStr);
+            if (!validCategories.has(catStr)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r });
 
             const config = uniqueCategories.get(catStr);
             const impact = (config && config.report === 'P&L') ? (cr - dr) : (dr - cr);
@@ -210,13 +215,40 @@ async function updateFinancials() {
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
 
     // --- Print Integrity Issues to Console ---
-    if (uncategorizedBank > 0 || uncategorizedCC > 0 || illegalCategories.size > 0 || illegalVendors.size > 0 || illegalCustomers.size > 0) {
+    const hasIssues = uncategorizedBank > 0 || uncategorizedCC > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0;
+    if (hasIssues) {
         console.log('\n--- DATA INTEGRITY ISSUES ---');
         if (uncategorizedBank > 0) console.log(`[!] Bank: ${uncategorizedBank} rows missing category`);
         if (uncategorizedCC > 0) console.log(`[!] CC: ${uncategorizedCC} rows missing category`);
-        if (illegalCategories.size > 0) console.log(`[!] Illegal Categories: ${Array.from(illegalCategories).join(', ')}`);
-        if (illegalVendors.size > 0) console.log(`[!] Unknown Vendors: ${Array.from(illegalVendors).join(', ')}`);
-        if (illegalCustomers.size > 0) console.log(`[!] Unknown Customers: ${Array.from(illegalCustomers).join(', ')}`);
+
+        const catSet = new Set(illegalCategories.map(c => c.value));
+        if (catSet.size > 0) console.log(`[!] Illegal Categories: ${Array.from(catSet).join(', ')}`);
+
+        const vendSet = new Set(illegalVendors.map(v => v.value));
+        if (vendSet.size > 0) console.log(`[!] Unknown Vendors: ${Array.from(vendSet).join(', ')}`);
+
+        const custSet = new Set(illegalCustomers.map(c => c.value));
+        if (custSet.size > 0) console.log(`[!] Unknown Customers: ${Array.from(custSet).join(', ')}`);
+
+        if (showChecker) {
+            console.log('\n--- Checker Details ---');
+            if (uncategorizedDetails.length > 0) {
+                console.log('\nUncategorized Rows:');
+                uncategorizedDetails.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: ${d.desc}`));
+            }
+            if (illegalCategories.length > 0) {
+                console.log('\nIllegal Categories:');
+                illegalCategories.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: "${d.value}"`));
+            }
+            if (illegalVendors.length > 0) {
+                console.log('\nUnknown Vendors:');
+                illegalVendors.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: "${d.value}"`));
+            }
+            if (illegalCustomers.length > 0) {
+                console.log('\nUnknown Customers:');
+                illegalCustomers.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: "${d.value}"`));
+            }
+        }
     }
 
     if (printOnly) return;
@@ -250,9 +282,13 @@ async function updateFinancials() {
 
     addIssue('Uncategorized Bank Rows', uncategorizedBank);
     addIssue('Uncategorized CC Rows', uncategorizedCC);
-    addIssue('Illegal Categories Found', Array.from(illegalCategories).join(', ') || 'None');
-    addIssue('Unknown Vendors Found', Array.from(illegalVendors).join(', ') || 'None');
-    addIssue('Unknown Customers Found', Array.from(illegalCustomers).join(', ') || 'None');
+    const catFinal = Array.from(new Set(illegalCategories.map(c => c.value))).join(', ') || 'None';
+    const vendFinal = Array.from(new Set(illegalVendors.map(v => v.value))).join(', ') || 'None';
+    const custFinal = Array.from(new Set(illegalCustomers.map(v => v.value))).join(', ') || 'None';
+
+    addIssue('Illegal Categories Found', catFinal);
+    addIssue('Unknown Vendors Found', vendFinal);
+    addIssue('Unknown Customers Found', custFinal);
 
     try {
         await workbook.xlsx.writeFile(filename);
