@@ -45,36 +45,8 @@ async function loadTransactions() {
         }
     }
 
-    if (accountType === 'cc') {
-        // [1]Date [2]Member [3]Desc [4]Amount [5]Cat [6]Sub [7]Ext [8]Vend [9]Cust [10]Acct [11]Rec [12]Report
-        targetSheet.columns = [
-            { header: 'Date', key: 'date', width: 12 },
-            { header: 'Member', key: 'member', width: 15 },
-            { header: 'Description', key: 'desc', width: 35 },
-            { header: 'Amount', key: 'amount', width: 15 },
-            { header: 'Category', key: 'category', width: 20 },
-            { header: 'Sub-Category', key: 'subcategory', width: 20 },
-            { header: 'Extended Details', key: 'extended', width: 30 },
-            { header: 'Vendor', key: 'vendor', width: 20 },
-            { header: 'Customer', key: 'customer', width: 20 },
-            { header: 'Account #', key: 'account', width: 15 },
-            { header: 'Receipt', key: 'receipt', width: 10 },
-            { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
-        ];
-    } else {
-        // [1]Date [2]Desc [3]Amount [4]Cat [5]Sub [6]Ext [7]Vend [8]Cust [9]Report
-        targetSheet.columns = [
-            { header: 'Date', key: 'date', width: 12 },
-            { header: 'Description', key: 'desc', width: 35 },
-            { header: 'Amount', key: 'amount', width: 15 },
-            { header: 'Category', key: 'category', width: 20 },
-            { header: 'Sub-Category', key: 'subcategory', width: 20 },
-            { header: 'Extended Details', key: 'extended', width: 30 },
-            { header: 'Vendor', key: 'vendor', width: 20 },
-            { header: 'Customer', key: 'customer', width: 20 },
-            { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
-        ];
-    }
+    // Explicitly disable worksheet-level autofilter to avoid conflicts with Table-level filters
+    targetSheet.autoFilter = null;
 
     const records = [];
 

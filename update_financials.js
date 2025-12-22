@@ -328,6 +328,9 @@ async function updateFinancials() {
         });
     }
 
+    // Explicitly disable worksheet-level autofilter to avoid conflicts with Table-level filters
+    summarySheet.autoFilter = null;
+
     summarySheet.getCell('A1').value = `Financial Summary (${new Date().toLocaleString()})`;
     summarySheet.getCell('A1').font = { size: 14, bold: true };
 
