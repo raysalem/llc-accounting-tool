@@ -1,4 +1,5 @@
 node_modules/
 *.xlsx
+!examples/*.xlsx
 .DS_Store
 .env
