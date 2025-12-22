@@ -8,6 +8,14 @@ This directory contains the integration test suite for the LLC Accounting Tool. 
 - `example_cc.csv`: Sample credit card purchases (Coffee/Supplies/Cloud Services).
 - `run_integration_test.js`: The main test runner that automates the workflow.
 
+## Test Scenario Description
+
+This integration test simulates a typical month of LLC activity:
+1.  **Revenue & Expenses**: Imports a bank CSV with a salary deposit, consulting income, and a rent payment.
+2.  **Credit Card Spending**: Imports a CC CSV with office supplies and travel expenses.
+3.  **Manual Adjustments**: Adds an owner investment and an audit adjustment via the Ledger.
+4.  **Integrity Stress Test**: Intentionally adds one "illegal" category and one unknown vendor to verify that the checker correctly identifies and reports them.
+
 ## Expected Outcome
 
 When running the integration test, the following values are calculated and verified:

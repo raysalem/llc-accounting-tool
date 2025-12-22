@@ -5,10 +5,31 @@ A node.js-based suite of tools for managing LLC accounting using Excel as the pr
 ## Features
 
 - **Automated Excel Template Generation**: Create a standardized accounting structure with Setup, Ledger, Bank, and Credit Card tabs.
-- **Polarity Reconciliation**: Easily toggle polarity flipping for credit card statements where purchases appear as positive numbers.
-- **Transaction Importing**: Scripts to batch import CSV/Excel data into the accounting template.
-- **Financial Reporting**: Generate P&L and Balance Sheet reports directly from your transaction data.
-- **Data Integrity Checks**: Verify categorized transactions and ensure no "illegal operations" (e.g., transfers between unlinked accounts) occur.
+- **Polarity Reconciliation**: Standardize inflow and outflow signs across different account types (e.g., flipping CC purchases from positive to negative).
+- **Transaction Importing**: Scripts to batch import CSV/Excel data into moving parts.
+- **Financial Reporting**: Generate P&L and Balance Sheet reports with categorized data and automated ledger balancing.
+- **Data Integrity Checks**: Real-time validation of categories, vendors, and customers to prevent classification errors.
+
+## Core Concepts & Features
+
+### 1. Polarity Reconciliation
+Bank statements and Credit Card statements often use different polarities (e.g., CC purchases appearing as positive numbers on the statement). To unify these, the tool uses a "Flip Polarity" setting in the **Setup** tab:
+- **Flip Polarity = Yes**: Multiplies all transaction amounts by -1. Use this for CC statements where expenses are positive.
+- **Flip Polarity = No**: Leaves amounts as is. Use this for bank statements where income is positive and expenses are negative.
+- **Goal**: All internal reporting treats **Asset Inflow as Positive** and **Asset Outflow as Negative**.
+
+### 2. Template Structure
+- **Setup Tab**: The control center. Define your categories, report mappings (P&L vs Balance Sheet), vendor lists, and sheet configurations (Sheet Name, Type, Flip Polarity, and Header Row offset).
+- **Ledger Tab**: For manual double-entry adjustments (e.g., depreciation, owner investments, or adjustments).
+- **Transaction Tabs**: (e.g., Bank Transactions, Credit Card Transactions) Where imported or manual line items live.
+
+### 3. Data Integrity Checker
+The tool validates every transaction during the report generation process:
+- **Master Lists**: Cross-references against categories, vendors, and customers defined in the Setup tab.
+- **Illegal Values**: Highlights entries using undefined categories or unknown vendors.
+- **Missing Data**: Flags transactions that are missing a category assignment.
+- **Reporting**: Issues are summarized in red at the bottom of the **Summary** tab and printed to the console.
+- **Deep Dive**: Use the `--checker` flag for specific row numbers and descriptions of every error.
 
 ## Getting Started
 
