@@ -46,22 +46,35 @@ async function runTest() {
     setupSheet.addRow(['Travel', 'General', 'Expense', 'P&L']);
     setupSheet.addRow(['Office', 'General', 'Expense', 'P&L']);
 
+    console.log('\n--- Phase 5: Add Ledger Entries ---');
+    const ledgerSheet = workbook.getWorksheet('Ledger');
+    // Add an Owner Investment (Equity/Asset)
+    // Date[1], Desc[2], Cat[3], Debit[4], Credit[5]
+    ledgerSheet.addRow([new Date('2025-01-01'), 'Owner Investment', 'Checking Account', 1000, 0]);
+    // Add a manual expense adjustment
+    ledgerSheet.addRow([new Date('2025-01-20'), 'Audit Adjustment', 'Office', 50, 0]);
+
     await workbook.xlsx.writeFile(TEST_FILE);
 
-    console.log('\n--- Phase 5: Run Financial Report ---');
+    console.log('\n--- Phase 6: Run Financial Report ---');
     execSync(`node update_financials.js ${TEST_FILE} --print-only --pl --bs`, { stdio: 'inherit' });
 
-    console.log('\n--- Phase 6: Verification ---');
-    // Expected Bank Total: 5000 - 1500 + 2500 = 6000
-    // Expected CC Total (Flipped): -(15.50 + 120.00 + 45.00) = -180.50
-    // Expected Net Income: (5000 + 2500) [Sales] - (1500) [Rent] - (15.50 + 120.00 + 45.00) [Travel/Office] = 7500 - 1500 - 180.50 = 5819.50
+    console.log('\n--- Phase 7: Save Test Artifact ---');
+    const ARTIFACT_PATH = 'tests/Full_Accounting_Test_Case.xlsx';
+    fs.copyFileSync(TEST_FILE, ARTIFACT_PATH);
+    console.log(`Saved full test case to ${ARTIFACT_PATH}`);
 
-    // We'll trust the printed output for visual confirmation in this script, 
-    // but in a real CI environment we'd parse the result.
+    console.log('\n--- Phase 8: Verification ---');
+    // math update:
+    // Bank: 6000 (from CSV) + 1000 (Ledger Debit) = 7000.00
+    // CC: -180.50
+    // Office: -165.00 (CSV) - 50 (Ledger Debit) = -215.00
+    // Net Income: 5819.50 (CSV) - 50 (Ledger) = 5769.50
+
     console.log('Test completed. Check output above for:');
-    console.log('Bank Balance: 6000.00');
+    console.log('Bank Balance: 7000.00');
     console.log('CC Balance: -180.50');
-    console.log('Net Income: 5819.50');
+    console.log('Net Income: 5769.50');
 }
 
 runTest().catch(console.error);
