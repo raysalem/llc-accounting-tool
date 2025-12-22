@@ -125,10 +125,21 @@ Example:
 
     // Clear Logic (Safe Mode)
     // We clear rows below the header to preserve sheet structure/ID
-    if (clearFlag && targetSheet.rowCount > headerRowIdx) {
-        console.log(`  Clearing existing data in '${targetSheetName}'...`);
-        // Note: spliceRows can be slow for huge sheets, but sets state correctly
-        targetSheet.spliceRows(headerRowIdx + 1, targetSheet.rowCount - headerRowIdx);
+    if (clearFlag) {
+        // Use lastRow.number to find the true bottom of the sheet
+        const lastRowNum = targetSheet.lastRow ? targetSheet.lastRow.number : targetSheet.rowCount;
+
+        if (lastRowNum > headerRowIdx) {
+            const rowsToDelete = lastRowNum - headerRowIdx;
+            console.log(`  [CLEAR] Removing ${rowsToDelete} rows from index ${headerRowIdx + 1} to ${lastRowNum}...`);
+
+            // Remove AutoFilter to prevent phantom ranges
+            if (targetSheet.autoFilter) targetSheet.autoFilter = null;
+
+            targetSheet.spliceRows(headerRowIdx + 1, rowsToDelete);
+        } else {
+            console.log(`  [CLEAR] Sheet appears empty (Last Row: ${lastRowNum}, Header: ${headerRowIdx}). Nothing to delete.`);
+        }
     }
 
     // Set Formulas
