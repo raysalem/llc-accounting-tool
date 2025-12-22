@@ -81,11 +81,12 @@ async function updateFinancials() {
     setupSheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
         const catName = getVal(row.getCell(1));
+        const accountType = getVal(row.getCell(2)); // Account Type column
         const report = getVal(row.getCell(4));
         if (catName) {
             const trimmed = catName.toString().trim();
             validCategories.add(trimmed);
-            uniqueCategories.set(trimmed, { report });
+            uniqueCategories.set(trimmed, { report, accountType });
         }
         const vendor = getVal(row.getCell(6));
         if (vendor) validVendors.add(vendor.toString().trim());
@@ -137,7 +138,6 @@ async function updateFinancials() {
 
         headerRow.eachCell((cell, colNumber) => {
             const val = getVal(cell).toString().toLowerCase();
-            // Stricter matching to avoid fuzzy overlaps
             if (val === 'date') map.date = colNumber;
             else if (val === 'description' || val === 'desc') map.desc = colNumber;
             else if (val === 'amount') map.amount = colNumber;
@@ -215,12 +215,25 @@ async function updateFinancials() {
     ledgerSheet.eachRow((row, r) => {
         if (r === 1) return;
         const rawDate = getVal(row.getCell(1));
-        const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
+        const rawDesc = getVal(row.getCell(2));
         const cat = getVal(row.getCell(3));
         const dr = parseFloat(getVal(row.getCell(4))) || 0;
         const cr = parseFloat(getVal(row.getCell(5))) || 0;
+
+        // Skip truly empty rows or rows without dates (user requirement)
+        if (!rawDate && !cat && !rawDesc && !dr && !cr) return;
+
+        if (!rawDate) {
+            if (cat || dr || cr) {
+                if (showChecker) console.log(`Ledger Row ${r}: SKIPPED (Missing Date). Rows must have dates.`);
+            }
+            return;
+        }
+
         if (cat) {
             const catStr = cat.toString().trim();
+            const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
+
             if (!validCategories.has(catStr)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
 
             const conf = uniqueCategories.get(catStr);
@@ -229,10 +242,23 @@ async function updateFinancials() {
             catStats[catStr].total += impact;
 
             // Integration: Update calculated bank/cc balances from Ledger entries
-            const matchingConfig = sheetConfigs.find(s => s.name.toLowerCase() === catStr.toLowerCase());
+            const targetAccountType = conf ? (conf.accountType || '').toLowerCase() : '';
+            const matchingConfig = sheetConfigs.find(s => {
+                const sName = s.name.toLowerCase();
+                const sType = s.type.toLowerCase();
+                const cName = catStr.toLowerCase();
+
+                return sName === cName ||
+                    sType === cName ||
+                    (targetAccountType && sType === targetAccountType) ||
+                    (targetAccountType && sName === targetAccountType);
+            });
+
             if (matchingConfig) {
                 const isMatchingCC = matchingConfig.type.toLowerCase().includes('cc') || matchingConfig.type.toLowerCase().includes('credit');
+                // Debiting an asset increase balance. Crediting an asset decreases balance.
                 if (isMatchingCC) ccTotal += (dr - cr); else bankTotal += (dr - cr);
+                if (showChecker) console.log(`Ledger Row ${r} [${displayDate}]: Applied ${dr - cr} impact to "${matchingConfig.name}" balance.`);
             }
         }
     });

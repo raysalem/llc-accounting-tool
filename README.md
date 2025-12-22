@@ -21,10 +21,14 @@ Bank statements and Credit Card statements often use different polarities (e.g.,
 ### 2. Template Structure
 - **Setup Tab**: The control center. Define your categories, report mappings (P&L vs Balance Sheet), vendor lists, and sheet configurations (Sheet Name, Type, Flip Polarity, and Header Row offset).
 - **Ledger Tab**: For manual double-entry adjustments (e.g., depreciation, owner investments, or adjustments).
+- **Dynamic Column Mapping**: Transactions sheets no longer require a fixed layout. The tool detects "Date", "Amount", "Category", etc., based on the headers in the row specified by the "Header Row" offset in the `Setup` tab.
+- **Ledger Integration**: Manual entries in the `Ledger` tab with categories matching account types (e.g., "Bank" or "CC") or sheet names are automatically incorporated into the calculated balances on the Balance Sheet.
 - **Transaction Tabs**: (e.g., Bank Transactions, Credit Card Transactions) Where imported or manual line items live.
 
 ### 3. Data Integrity Checker
 The tool validates every transaction during the report generation process:
+- **Data Integrity Checker**: Groups issues (uncategorized, illegal categories, unknown vendors/customers) by tab. Enforces date requirements on all entries.
+- **Offset Verification**: Automatically warns if the row immediately following your configured header offset looks like a header itself.
 - **Master Lists**: Cross-references against categories, vendors, and customers defined in the Setup tab.
 - **Illegal Values**: Highlights entries using undefined categories or unknown vendors.
 - **Missing Data**: Flags transactions that are missing a category assignment.
