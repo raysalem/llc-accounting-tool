@@ -1,0 +1,9 @@
+{
+    "name": "llc-accounting-template",
+    "version": "1.0.0",
+    "description": "Generates an LLC accounting excel template",
+    "main": "generate_excel.js",
+    "dependencies": {
+        "exceljs": "^4.4.0"
+    }
+}
