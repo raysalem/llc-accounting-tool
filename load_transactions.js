@@ -90,6 +90,34 @@ async function loadTransactions() {
         }
     }
 
+    // --- Adjust Layout for Top Totals ---
+    // Check if header is at Row 1 (standard template) or Row 3 (already adjusted)
+    const firstRowVals = targetSheet.getRow(1).values;
+    const isHeaderAtTop = firstRowVals.includes('Date') || (firstRowVals[1] && firstRowVals[1].includes('Date'));
+
+    let headerRowIdx = isHeaderAtTop ? 1 : 3;
+
+    if (isHeaderAtTop) {
+        console.log('  Adjusting layout: Inserting 2 rows at top for Totals...');
+        targetSheet.spliceRows(1, 0, [], []);
+        headerRowIdx = 3;
+    }
+
+    // Set Formulas
+    const amtCol = accountType === 'cc' ? 'D' : 'C'; // Amount Column Letter
+    const startRow = headerRowIdx + 1;
+    const maxRow = 10000; // Arbitrary large number for range
+
+    targetSheet.getCell('A1').value = 'TOTAL';
+    targetSheet.getCell('A1').font = { bold: true };
+    targetSheet.getCell(`${amtCol}1`).value = { formula: `SUM(${amtCol}${startRow}:${amtCol}${maxRow})` };
+    targetSheet.getCell(`${amtCol}1`).font = { bold: true };
+
+    targetSheet.getCell('A2').value = 'SUBTOTAL (Filtered)';
+    targetSheet.getCell('A2').font = { bold: true, italic: true };
+    targetSheet.getCell(`${amtCol}2`).value = { formula: `SUBTOTAL(109, ${amtCol}${startRow}:${amtCol}${maxRow})` };
+    targetSheet.getCell(`${amtCol}2`).font = { bold: true, italic: true };
+
     // Explicitly disable worksheet-level autofilter to avoid conflicts with Table-level filters
     targetSheet.autoFilter = null;
 
@@ -118,7 +146,8 @@ async function loadTransactions() {
 
             const record = {};
             const dateIdx = headers.indexOf('date');
-            const nameIdx = headers.indexOf('name');
+            const nameIdx = headers.indexOf('name') !== -1 ? headers.indexOf('name') : headers.indexOf('description');
+            // Fallback for description if 'name' not found (common in bank csvs vs quickbooks)
             const memoIdx = headers.indexOf('memo');
             const amtIdx = headers.indexOf('amount');
 
@@ -185,8 +214,8 @@ async function loadTransactions() {
         });
     }
 
-    // Append Records
-    let addedCount = 0;
+    // --- Prepare Data Rows ---
+    const rowsToAdd = [];
     records.forEach(rec => {
         let dateVal = rec.date;
         if (typeof dateVal === 'string') dateVal = new Date(dateVal);
@@ -201,7 +230,7 @@ async function loadTransactions() {
                 parseFloat(rec.amount) || 0,
                 '', '', // Cat, Sub
                 rec.extended || '',
-                '', '', // Vendor, Cust
+                rec.vendor || '', rec.customer || '', // Vend, Cust
                 rec.account || '',
                 rec.receipt || ''
             ];
@@ -213,29 +242,76 @@ async function loadTransactions() {
                 parseFloat(rec.amount) || 0,
                 '', '', // Cat, Sub
                 rec.extended || '',
-                '', '', // Vendor, Cust
+                rec.vendor || '', rec.customer || '', // Vendor, Cust
+            ];
+        }
+        rowsToAdd.push(newRow);
+    });
+
+    // --- Table Management ---
+    // Check if a table already exists to avoid corruption
+    const hasTable = targetSheet.tables && Object.keys(targetSheet.tables).length > 0;
+
+    if (hasTable) {
+        console.log('  Existing Excel Table detected. Appending rows to it...');
+        // Just add rows normally, Excel should expand the table
+        targetSheet.addRows(rowsToAdd);
+    } else {
+        console.log('  No Excel Table found. Creating one...');
+        // Create table with data
+        // Define columns matching the sheet structure request
+        let tableCols = [];
+        if (accountType === 'cc') {
+            tableCols = [
+                { name: 'Date' }, { name: 'Member' }, { name: 'Description' }, { name: 'Amount' },
+                { name: 'Category' }, { name: 'Sub-Category' }, { name: 'Extended Details' },
+                { name: 'Vendor' }, { name: 'Customer' }, { name: 'Account #' }, { name: 'Receipt' },
+                { name: 'Report Type (Auto)' }
+            ];
+        } else {
+            tableCols = [
+                { name: 'Date' }, { name: 'Description' }, { name: 'Amount' },
+                { name: 'Category' }, { name: 'Sub-Category' }, { name: 'Extended Details' },
+                { name: 'Vendor' }, { name: 'Customer' }, { name: 'Report Type (Auto)' }
             ];
         }
 
-        targetSheet.addRow(newRow);
-        addedCount++;
-    });
+        // We need to write the data differently for addTable
+        // addTable expects 'rows' as array of arrays, and it writes everything relative to 'ref'
+        // Since we already have the Header at Row 3 (headerRowIdx), we put the table there.
+        // However, addTable writes the header too. We should overwrite the existing header to be safe or ensure it matches.
 
-    console.log(`Successfully added ${addedCount} transactions to ${targetSheetName}.`);
+        targetSheet.addTable({
+            name: `Table_${targetSheetName.replace(/\s/g, '')}_${Date.now()}`,
+            ref: `A${headerRowIdx}`,
+            headerRow: true,
+            totalsRow: false,
+            style: {
+                theme: 'TableStyleMedium2',
+                showRowStripes: true,
+            },
+            columns: tableCols,
+            rows: rowsToAdd
+        });
+    }
+
+    console.log(`Successfully processed ${rowsToAdd.length} transactions in ${targetSheetName}.`);
 
     // Apply Validation & Formulas (Post-Insert)
-    const maxRow = Math.max(500, targetSheet.rowCount);
-    for (let i = 2; i <= maxRow; i++) {
+    // Adjust start row for loop: header is at 3, data starts at 4
+    const validationStartRow = headerRowIdx + 1;
+    const finalMaxRow = targetSheet.rowCount;
+
+    for (let i = validationStartRow; i <= finalMaxRow; i++) {
         if (accountType === 'cc') {
             targetSheet.getCell(`E${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$A$2:$A$100'] };
-            targetSheet.getCell(`F${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$B$2:$B$100'] }; // Sub-Cat
+            targetSheet.getCell(`F${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$B$2:$B$100'] };
             targetSheet.getCell(`H${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$F$2:$F$100'] };
             targetSheet.getCell(`I${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$G$2:$G$100'] };
             targetSheet.getCell(`L${i}`).value = { formula: `IFERROR(VLOOKUP(E${i},Setup!A:D,4,FALSE), "")` };
         } else {
-            // Bank: Cat[4], Sub[5], Vend[7], Cust[8], Formula[9]
             targetSheet.getCell(`D${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$A$2:$A$100'] };
-            targetSheet.getCell(`E${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$B$2:$B$100'] }; // Sub-Cat
+            targetSheet.getCell(`E${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$B$2:$B$100'] };
             targetSheet.getCell(`G${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$F$2:$F$100'] };
             targetSheet.getCell(`H${i}`).dataValidation = { type: 'list', allowBlank: true, formulae: ['Setup!$G$2:$G$100'] };
             targetSheet.getCell(`I${i}`).value = { formula: `IFERROR(VLOOKUP(D${i},Setup!A:D,4,FALSE), "")` };
