@@ -382,7 +382,7 @@ Example:
     }
 
     // Explicitly disable worksheet-level autofilter to avoid conflicts with Table-level filters
-    summarySheet.autoFilter = null;
+    // summarySheet.autoFilter = null; // Removed to prevent corruption if Table exists
 
     summarySheet.getCell('A1').value = `Financial Summary (${new Date().toLocaleString()})`;
     summarySheet.getCell('A1').font = { size: 14, bold: true };
