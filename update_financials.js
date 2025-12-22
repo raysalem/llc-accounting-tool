@@ -43,6 +43,9 @@ async function updateFinancials() {
     }
 
     // --- 1. Read Setup Data & Configuration ---
+    const validCategories = new Set();
+    const validVendors = new Set();
+    const validCustomers = new Set();
     const uniqueCategories = new Map();
     const sheetConfigs = [];
 
@@ -51,7 +54,17 @@ async function updateFinancials() {
 
         const catName = row.getCell(1).value;
         const report = row.getCell(4).value;
-        if (catName) uniqueCategories.set(catName.toString().trim(), { report });
+        if (catName) {
+            const trimmed = catName.toString().trim();
+            validCategories.add(trimmed);
+            uniqueCategories.set(trimmed, { report });
+        }
+
+        const vendor = row.getCell(6).value;
+        if (vendor) validVendors.add(vendor.toString().trim());
+
+        const customer = row.getCell(7).value;
+        if (customer) validCustomers.add(customer.toString().trim());
 
         const confSheetName = row.getCell(9).value;
         const confType = row.getCell(10).value;
@@ -82,6 +95,10 @@ async function updateFinancials() {
     let uncategorizedBank = 0;
     let uncategorizedCC = 0;
 
+    const illegalCategories = new Set();
+    const illegalVendors = new Set();
+    const illegalCustomers = new Set();
+
     const bankMap = { date: 1, desc: 2, amount: 3, category: 4, subCat: 5, vendor: 7, customer: 8 };
     const ccMap = { date: 1, desc: 3, amount: 4, category: 5, subCat: 6, vendor: 8, customer: 9 };
 
@@ -101,12 +118,8 @@ async function updateFinancials() {
         const rawDate = row.getCell(map.date).value;
         const rawDesc = row.getCell(map.desc).value ? row.getCell(map.desc).value.toString().toLowerCase() : '';
 
-        // --- Smart Skip (Prevents Double Counting Totals) ---
-        // 1. Skip strictly empty rows
         if (!rawDate && !rawDesc && !amount) return;
-        // 2. Skip rows that look like manual Totals/Balances
         if (rawDesc.includes('total') || rawDesc.includes('balance') || rawDesc.includes('sum')) return;
-        // 3. Skip rows without a date (Transactions should always have a date)
         if (!rawDate) return;
 
         if (flip) amount = amount * -1;
@@ -114,12 +127,13 @@ async function updateFinancials() {
         if (isCC) ccTotal += amount;
         else bankTotal += amount;
 
+        // --- Integrity Checks ---
         if (!category && Math.abs(amount) > 0.01) {
             if (isCC) uncategorizedCC++; else uncategorizedBank++;
-        }
-
-        if (category) {
+        } else if (category) {
             const catStr = category.toString().trim();
+            if (!validCategories.has(catStr)) illegalCategories.add(catStr);
+
             if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
             catStats[catStr].total += amount;
 
@@ -129,11 +143,13 @@ async function updateFinancials() {
 
         if (vendor) {
             const vStr = vendor.toString().trim();
+            if (!validVendors.has(vStr)) illegalVendors.add(vStr);
             vendorStats[vStr] = (vendorStats[vStr] || 0) + amount;
         }
 
         if (customer) {
             const cStr = customer.toString().trim();
+            if (!validCustomers.has(cStr)) illegalCustomers.add(cStr);
             customerStats[cStr] = (customerStats[cStr] || 0) + amount;
         }
     }
@@ -143,14 +159,8 @@ async function updateFinancials() {
         if (sheet) {
             let pType = 'bank';
             const tStr = config.type.toLowerCase();
-            const tokens = tStr.split(/[^a-z0-9]+/);
-
-            const isCC = tokens.includes('cc') || tokens.includes('card') || tokens.includes('credit') || tokens.includes('amex') || tokens.includes('visa') || tokens.includes('liability');
-            const isBank = tokens.includes('checking') || tokens.includes('savings') || tokens.includes('debit');
-
-            if (isBank) pType = 'bank';
-            else if (isCC) pType = 'cc';
-            else if (tStr.includes('bank')) pType = 'bank';
+            const isCC = tStr.includes('cc') || tStr.includes('card') || tStr.includes('credit') || tStr.includes('amex');
+            if (isCC) pType = 'cc';
 
             sheet.eachRow((row, r) => { if (r > config.offset) processLine(row, pType, config.flip); });
         }
@@ -164,6 +174,8 @@ async function updateFinancials() {
         const cr = row.getCell(5).value || 0;
         if (cat) {
             const catStr = cat.toString().trim();
+            if (!validCategories.has(catStr)) illegalCategories.add(catStr);
+
             const config = uniqueCategories.get(catStr);
             const impact = (config && config.report === 'P&L') ? (cr - dr) : (dr - cr);
             if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
@@ -180,25 +192,11 @@ async function updateFinancials() {
     const bsNames = Array.from(uniqueCategories.keys()).filter(n => uniqueCategories.get(n).report === 'Balance Sheet').sort();
     reports.bs = [{ label: '** Bank Balance (Calculated)', value: bankTotal }, { label: '** CC Balance (Calculated)', value: ccTotal }];
 
-    const exclusions = [...sheetConfigs.map(s => s.name.toLowerCase()), ...sheetConfigs.map(s => s.type.toLowerCase()), 'checking account', 'savings account', 'credit card'];
+    const exclusions = [...sheetConfigs.map(s => s.name.toLowerCase()), 'checking account', 'savings account', 'credit card'];
     bsNames.forEach(n => {
-        if (exclusions.includes(n.toLowerCase())) return;
+        if (exclusions.some(ex => n.toLowerCase().includes(ex))) return;
         const amt = catStats[n] ? catStats[n].total : 0;
         if (Math.abs(amt) > 0.01) reports.bs.push({ label: n, value: amt });
-    });
-
-    reports.vendor = Object.entries(vendorStats).sort((a, b) => a[1] - b[1]).slice(0, 10).map(([k, v]) => ({ label: k, value: v }));
-    reports.customer = Object.entries(customerStats).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => ({ label: k, value: v }));
-
-    reports.plSub = [];
-    pnlNames.forEach(name => {
-        const total = catStats[name] ? catStats[name].total : 0;
-        reports.plSub.push({ type: 'main', category: name, value: total });
-        if (catStats[name] && catStats[name].subCats) {
-            const subs = catStats[name].subCats;
-            const valid = Object.keys(subs).filter(s => s !== '(No Sub-Cat)' && Math.abs(subs[s]) > 0.01).sort();
-            if (valid.length > 1) valid.forEach(s => reports.plSub.push({ type: 'sub', subCategory: s, value: subs[s] }));
-        }
     });
 
     function printSection(title, rows) {
@@ -210,8 +208,16 @@ async function updateFinancials() {
 
     if (showAll || showPL) { printSection('PROFIT & LOSS', reports.pl); console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`); }
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
-    if (showAll || showVendor) printSection('TOP VENDORS', reports.vendor);
-    if (showAll || showCustomer) printSection('TOP CUSTOMERS', reports.customer);
+
+    // --- Print Integrity Issues to Console ---
+    if (uncategorizedBank > 0 || uncategorizedCC > 0 || illegalCategories.size > 0 || illegalVendors.size > 0 || illegalCustomers.size > 0) {
+        console.log('\n--- DATA INTEGRITY ISSUES ---');
+        if (uncategorizedBank > 0) console.log(`[!] Bank: ${uncategorizedBank} rows missing category`);
+        if (uncategorizedCC > 0) console.log(`[!] CC: ${uncategorizedCC} rows missing category`);
+        if (illegalCategories.size > 0) console.log(`[!] Illegal Categories: ${Array.from(illegalCategories).join(', ')}`);
+        if (illegalVendors.size > 0) console.log(`[!] Unknown Vendors: ${Array.from(illegalVendors).join(', ')}`);
+        if (illegalCustomers.size > 0) console.log(`[!] Unknown Customers: ${Array.from(illegalCustomers).join(', ')}`);
+    }
 
     if (printOnly) return;
 
@@ -219,12 +225,34 @@ async function updateFinancials() {
     summarySheet = workbook.addWorksheet('Summary');
     summarySheet.getCell('A1').value = 'Financial Summary (' + new Date().toLocaleString() + ')';
     summarySheet.getCell('A1').font = { size: 14, bold: true };
+
     let row = 3;
-    summarySheet.getCell(`A${row}`).value = 'Profit & Loss'; row++;
+    summarySheet.getCell(`A${row}`).value = 'Profit & Loss';
+    summarySheet.getCell(`A${row}`).font = { bold: true }; row++;
     reports.pl.forEach(r => { summarySheet.getCell(`A${row}`).value = r.label; summarySheet.getCell(`B${row}`).value = r.value; row++; });
-    summarySheet.getCell(`A${row}`).value = 'NET INCOME'; summarySheet.getCell(`B${row}`).value = netIncome; row += 3;
-    summarySheet.getCell(`A${row}`).value = 'Balance Sheet'; row++;
+    summarySheet.getCell(`A${row}`).value = 'NET INCOME'; summarySheet.getCell(`B${row}`).value = netIncome;
+    summarySheet.getCell(`A${row}`).font = { bold: true }; row += 3;
+
+    summarySheet.getCell(`A${row}`).value = 'Balance Sheet';
+    summarySheet.getCell(`A${row}`).font = { bold: true }; row++;
     reports.bs.forEach(r => { summarySheet.getCell(`A${row}`).value = r.label; summarySheet.getCell(`B${row}`).value = r.value; row++; });
+
+    // --- Integrity Report in Excel ---
+    row += 3;
+    summarySheet.getCell(`A${row}`).value = 'Data Integrity Check';
+    summarySheet.getCell(`A${row}`).font = { bold: true, color: { argb: 'FFFF0000' } }; row++;
+
+    const addIssue = (label, val) => {
+        summarySheet.getCell(`A${row}`).value = label;
+        summarySheet.getCell(`B${row}`).value = val;
+        row++;
+    };
+
+    addIssue('Uncategorized Bank Rows', uncategorizedBank);
+    addIssue('Uncategorized CC Rows', uncategorizedCC);
+    addIssue('Illegal Categories Found', Array.from(illegalCategories).join(', ') || 'None');
+    addIssue('Unknown Vendors Found', Array.from(illegalVendors).join(', ') || 'None');
+    addIssue('Unknown Customers Found', Array.from(illegalCustomers).join(', ') || 'None');
 
     try {
         await workbook.xlsx.writeFile(filename);

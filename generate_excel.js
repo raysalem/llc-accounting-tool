@@ -39,6 +39,11 @@ async function createTemplate() {
     setupSheet.getCell('K3').value = 'Yes'; // Default to Yes for CC
     setupSheet.getCell('L3').value = 1;
 
+    // Add some sample vendors/customers
+    setupSheet.getCell('F2').value = 'Starbucks';
+    setupSheet.getCell('F3').value = 'Amazon';
+    setupSheet.getCell('F4').value = 'AWS';
+
     const bankSheet = workbook.addWorksheet('Bank Transactions');
     bankSheet.columns = [
         { header: 'Date', key: 'date', width: 12 }, { header: 'Description', key: 'desc', width: 35 },

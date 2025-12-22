@@ -41,6 +41,10 @@ async function runTest() {
         if (desc.includes('AWS')) row.getCell(5).value = 'Office';
     });
 
+    // --- Add Illegal Entries for Integrity Test ---
+    bankSheet.addRow([new Date('2025-01-25'), 'Mystery Corp', 100, 'IllegalCat', '', '', 'UnknownVendor', '']);
+    bankSheet.addRow([new Date('2025-01-26'), 'Uncategorized Expense', 50, '', '', '', '', '']); // No category
+
     // Add necessary categories to Setup if missing
     const setupSheet = workbook.getWorksheet('Setup');
     setupSheet.addRow(['Travel', 'General', 'Expense', 'P&L']);
