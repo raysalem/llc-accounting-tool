@@ -11,6 +11,34 @@ async function updateFinancials() {
     const showPLSub = args.includes('--pl-sub');
     const showChecker = args.includes('--checker');
 
+    // Help Menu
+    if (args.includes('--help')) {
+        console.log(`
+Usage: node update_financials.js [filename] [flags]
+
+Description:
+  Updates the financial accounting spreadsheet. It reads the Setup, Ledger, and Transaction sheets,
+  categorizes transactions, balances the ledger, and generates P&L / Balance Sheet reports in standard Output format.
+
+Arguments:
+  [filename]      Path to the Excel file (default: LLC_Accounting_Template.xlsx)
+
+Flags:
+  --help          Show this help message.
+  --print-only    Calculate and print the report to the console WITHOUT saving changes to the Excel file.
+  --pl            Print the Profit & Loss statement to the console.
+  --bs            Print the Balance Sheet to the console.
+  --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
+  --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
+  --vendor        (Optional) Print spending statistics by Vendor.
+  --customer      (Optional) Print income statistics by Customer.
+
+Example:
+  node update_financials.js "My_Books_2025.xlsx" --print-only --pl --checker
+        `);
+        return;
+    }
+
     const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker;
     const showAll = printOnly && !specificFilter;
 

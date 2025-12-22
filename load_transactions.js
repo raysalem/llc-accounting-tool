@@ -6,10 +6,38 @@ async function loadTransactions() {
     const args = process.argv.slice(2);
     // Parse flags vs positionals
     const clearFlag = args.includes('--clear');
+    const helpFlag = args.includes('--help');
     const positionals = args.filter(a => !a.startsWith('--'));
 
+    if (helpFlag) {
+        console.log(`
+Usage: node load_transactions.js <inputFile> <accountType> <targetTemplate> [--clear]
+
+Description:
+  Imports transactions from a CSV or Excel file into the main accounting workbook.
+  It automatically detects columns, formats headers, and appends data as an Excel Table.
+
+Arguments:
+  <inputFile>       Path to the source file (CSV or Excel).
+  <accountType>     Type of account to load: 'bank' or 'cc' (Credit Card).
+                    - 'bank': Mapped to 'Bank Transactions' (or sheet name configured in Setup).
+                    - 'cc':   Mapped to 'Credit Card Transactions' (or sheet name configured in Setup).
+  <targetTemplate>  Path to the main accounting Excel file (e.g., "My_Books_2025.xlsx").
+
+Flags:
+  --help            Show this help message.
+  --clear           [WARNING] Clears ALL existing data rows in the target sheet before importing.
+                    Use this for fresh imports or re-runs.
+
+Example:
+  node load_transactions.js "e_statements/jan_bank.csv" bank "Books_2025.xlsx"
+  node load_transactions.js "e_statements/jan_cc.xlsx" cc "Books_2025.xlsx" --clear
+        `);
+        return;
+    }
+
     if (positionals.length < 3) {
-        console.log('Usage: node load_transactions.js <inputFile> <accountType> <targetTemplate> [--clear]');
+        console.log('Error: Missing required arguments. Use --help for usage information.');
         return;
     }
 
