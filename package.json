@@ -1,6 +1,6 @@
 {
     "name": "llc-accounting-tool",
-    "version": "1.0.0",
+    "version": "1.0.0-java",
     "description": "Tools for managing LLC accounting using Excel and Node.js",
     "main": "generate_excel.js",
     "dependencies": {

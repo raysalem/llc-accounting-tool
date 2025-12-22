@@ -1,4 +1,6 @@
 const ExcelJS = require('exceljs');
+const { execSync } = require('child_process');
+const pkg = require('./package.json');
 
 async function createTemplate() {
     const filename = 'LLC_Accounting_Template.xlsx';
@@ -70,6 +72,16 @@ async function createTemplate() {
     ];
 
     workbook.addWorksheet('Summary');
+
+    const versionSheet = workbook.addWorksheet('VERSION');
+    versionSheet.columns = [{ header: 'Property', width: 20 }, { header: 'Value', width: 50 }];
+
+    let gitSha = 'N/A';
+    try { gitSha = execSync('git rev-parse HEAD').toString().trim(); } catch (e) { }
+
+    versionSheet.addRow(['Version ID', pkg.version]);
+    versionSheet.addRow(['Git SHA', gitSha]);
+    versionSheet.addRow(['Generated At', new Date().toLocaleString()]);
 
     await workbook.xlsx.writeFile(filename);
     console.log(`Template updated: ${filename}`);
