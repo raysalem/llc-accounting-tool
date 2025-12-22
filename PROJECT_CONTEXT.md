@@ -1,36 +1,34 @@
-# LLC Accounting Template Project Context
+# AI Project Context: LLC Accounting Tool
 
-## Overview
-This project generates a standardized Excel template for LLC accounting. It handles transaction tracking, reconciliation, and automated reporting.
+This document is a technical reference for the Antigravity agent. For user-facing features, installation, and usage, see `README.md`.
 
-## Artifacts
-- **Generator Script**: `generate_excel.js`
-- **Report Updater**: `update_financials.js`
-- **Importer Script**: `load_transactions.js`
-- **Example Generator**: `generate_example_data.js`
+## System Architecture
 
-## Reconciling Different Polarities
-Bank statements and Credit Card statements often use different polarities (e.g., CC purchases appearing as positive numbers).
+The tool is a collection of Node.js scripts that interface with Excel (`.xlsx`) via the `exceljs` library. It avoids a complex database, treating the Excel workbook as the "Single Source of Truth" and the primary UI.
 
-To reconcile these:
-1.  Go to the **Setup** tab.
-2.  In the **Sheet Configuration** section (Columns I, J, K):
-    - Set **Flip Polarity?** to **Yes** for your Credit Card sheets if purchases are imported as positive numbers.
-    - Set it to **No** for your Bank sheets if income is positive and expenses are negative.
-3.  The `update_financials.js` script will automatically normalize all data to: **Asset Inflow = Positive** and **Asset Outflow = Negative** for your P&L and Balance Sheet reports.
+### Logic Flow
+1.  **Generation**: `generate_excel.js` creates a workbook with strictly defined named ranges and column mappings.
+2.  **Ingestion**: `load_transactions.js` performs fuzzy header matching to map external CSV/Excel data into the internal template columns.
+3.  **Processing**: `update_financials.js` aggregates data.
+    -   **Normalization**: Flips polarities based on "Flip Polarity?" config in the Setup sheet.
+    -   **Validation**: Performs a multi-pass scan for uncategorized rows or "illegal" entries (not in master lists).
+    -   **Reporting**: Writes calculated totals to the Summary sheet.
 
-## Template Structure
+## Internal Data Mappings
 
-### 1. Setup Tab
-- **Sheet Configuration** (Cols I/J/K):
-    - `Sheet Name`: Name of the tab.
-    - `Account Type`: `Bank` or `CC` (determines column mapping).
-    - `Flip Polarity?`: Set to `Yes` to multiply all values by -1 (used to unify CC charges).
-    - `Header Row`: The row number where the table header starts (e.g., 1 if headers are on top, 5 if there is extra info above the table). Transactions are read starting from the next row.
+### Sheet Configuration (Master Config)
+Read from `Setup` sheet, Columns I-L:
+- `I`: Sheet Name
+- `J`: Account Type (`Bank` | `CC`)
+- `K`: Flip Polarity (`Yes`/`No`)
+- `L`: Header Row Offset (Transactions start at `offset + 1`)
 
-### 2. Usage Guide
-1.  **Configure**: Define your sheets and polarity in Setup.
-2.  **Transactions**: Enter data in the Bank or CC tabs.
-3.  **Run Reports**: Close Excel and run `node update_financials.js`.
-    - Use `--print-only` to see balances in the console.
-    - Use `--pl` or `--bs` to filter outputs.
+### Transaction Column Indices
+- **Bank**: Date(1), Desc(2), Amt(3), Cat(4), Sub(5), Vend(7), Cust(8)
+- **CC**: Date(1), Desc(3), Amt(4), Cat(5), Sub(6), Vend(8), Cust(9)
+
+## Integrity Logic
+The checker maintains Sets of `validCategories`, `validVendors`, and `validCustomers` from the Setup sheet. Any transaction using a value not in these sets is pushed into an `illegalCategories/Vendors/Customers` array along with its row and sheet context for the `--checker` report.
+
+## CI/CD
+- **GitHub Actions**: Configured in `.github/workflows/test.yml` to run `node tests/run_integration_test.js` on every push.
