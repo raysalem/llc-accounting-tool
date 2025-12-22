@@ -50,7 +50,7 @@ A node.js-based suite of tools for managing LLC accounting using Excel as the pr
 You can verify the entire workflow (template generation -> transaction loading -> report generation) by running the integration test:
 
 ```bash
-node run_integration_test.js
+node tests/run_integration_test.js
 ```
 
 This script:
@@ -58,13 +58,18 @@ This script:
 2.  Loads data from `example_bank.csv` and `example_cc.csv`.
 3.  Simulates transaction categorization.
 4.  Prints a financial report and verifies the totals.
+5.  Saves a complete Excel artifact to `tests/Full_Accounting_Test_Case.xlsx`.
+
+## Continuous Integration
+
+This project uses **GitHub Actions** to ensure code quality. On every push or pull request to the `main` branch, the integration test suite is automatically executed.
 
 ## Key Scripts
 
 - `generate_excel.js`: Creates the initial boilerplate Excel structure.
 - `update_financials.js`: The main engine for calculating balances and generating reports.
 - `load_transactions.js`: Handles importing data from external sources.
-- `inspect_bank.js` / `inspect_excel.js`: Utility scripts for debugging and data validation.
+- `inspect.js`: Consolidated utility for debugging and data validation.
 
 ## License
 
