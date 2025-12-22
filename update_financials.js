@@ -130,13 +130,15 @@ async function updateFinancials() {
         else bankTotal += amount;
 
         // --- Integrity Checks ---
+        const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
+
         if (!category && Math.abs(amount) > 0.01) {
             if (isCC) uncategorizedCC++; else uncategorizedBank++;
-            uncategorizedDetails.push({ sheet: processingType, row: row.number, desc: rawDesc });
+            uncategorizedDetails.push({ sheet: processingType, row: row.number, date: displayDate, desc: rawDesc });
         } else if (category) {
             const catStr = category.toString().trim();
             if (!validCategories.has(catStr)) {
-                illegalCategories.push({ value: catStr, sheet: processingType, row: row.number });
+                illegalCategories.push({ value: catStr, sheet: processingType, row: row.number, date: displayDate });
             }
 
             if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
@@ -148,13 +150,13 @@ async function updateFinancials() {
 
         if (vendor) {
             const vStr = vendor.toString().trim();
-            if (!validVendors.has(vStr)) illegalVendors.push({ value: vStr, sheet: processingType, row: row.number });
+            if (!validVendors.has(vStr)) illegalVendors.push({ value: vStr, sheet: processingType, row: row.number, date: displayDate });
             vendorStats[vStr] = (vendorStats[vStr] || 0) + amount;
         }
 
         if (customer) {
             const cStr = customer.toString().trim();
-            if (!validCustomers.has(cStr)) illegalCustomers.push({ value: cStr, sheet: processingType, row: row.number });
+            if (!validCustomers.has(cStr)) illegalCustomers.push({ value: cStr, sheet: processingType, row: row.number, date: displayDate });
             customerStats[cStr] = (customerStats[cStr] || 0) + amount;
         }
     }
@@ -174,12 +176,14 @@ async function updateFinancials() {
     // --- 3. Process Ledger ---
     ledgerSheet.eachRow((row, r) => {
         if (r === 1) return;
+        const rawDate = row.getCell(1).value;
+        const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
         const cat = row.getCell(3).value;
         const dr = row.getCell(4).value || 0;
         const cr = row.getCell(5).value || 0;
         if (cat) {
             const catStr = cat.toString().trim();
-            if (!validCategories.has(catStr)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r });
+            if (!validCategories.has(catStr)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
 
             const config = uniqueCategories.get(catStr);
             const impact = (config && config.report === 'P&L') ? (cr - dr) : (dr - cr);
@@ -252,10 +256,10 @@ async function updateFinancials() {
             }
 
             if (showChecker) {
-                sheetUncat.forEach(d => console.log(`      - Row ${d.row}: MISSING CATEGORY ("${d.desc}")`));
-                sheetIllegalCats.forEach(d => console.log(`      - Row ${d.row}: ILLEGAL CATEGORY "${d.value}"`));
-                sheetIllegalVendors.forEach(d => console.log(`      - Row ${d.row}: UNKNOWN VENDOR "${d.value}"`));
-                sheetIllegalCustomers.forEach(d => console.log(`      - Row ${d.row}: UNKNOWN CUSTOMER "${d.value}"`));
+                sheetUncat.forEach(d => console.log(`      - [${d.date}] Row ${d.row}: MISSING CATEGORY ("${d.desc}")`));
+                sheetIllegalCats.forEach(d => console.log(`      - [${d.date}] Row ${d.row}: ILLEGAL CATEGORY "${d.value}"`));
+                sheetIllegalVendors.forEach(d => console.log(`      - [${d.date}] Row ${d.row}: UNKNOWN VENDOR "${d.value}"`));
+                sheetIllegalCustomers.forEach(d => console.log(`      - [${d.date}] Row ${d.row}: UNKNOWN CUSTOMER "${d.value}"`));
             }
         });
     }
