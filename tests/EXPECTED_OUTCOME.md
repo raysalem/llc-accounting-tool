@@ -20,17 +20,17 @@ This integration test simulates a typical month of LLC activity:
 
 When running the integration test, the following values are calculated and verified:
 
-### 1. Bank Balance (Calculated from Transactions)
-- **Input**: `5000.00` (Salary) - `1500.00` (Rent) + `2500.00` (Consulting)
-- **Expected Total**: `6000.00`
+### 1. Bank Balance (Calculated)
+- **Input**: `6000.00` (CSV) + `1000.00` (Ledger Debit) + `150.00` (Integrity Rows)
+- **Expected Total**: `7150.00`
 
-### 2. Credit Card Balance (Calculated from Transactions)
-- **Input**: `15.50` (Coffee) + `120.00` (Supplies) + `45.00` (Cloud)
-- **Polarity Flip**: Applied (converts positive charges to negative impacts)
+### 2. Credit Card Balance (Calculated)
+- **Input**: `180.50` (CSV charges)
+- **Polarity Flip**: Applied (Expenses shown as negative impacts)
 - **Expected Total**: `-180.50`
 
 ### 3. Ledger Impact
-- **Owner Investment**: `1000.00` Debit to `Checking Account` (Increases Asset)
+- **Owner Investment**: `1000.00` Debit to `Bank Transactions` (Increases Asset)
 - **Audit Adjustment**: `50.00` Debit to `Office` (Increases Expense)
 
 ### 4. Net Income (P&L)
