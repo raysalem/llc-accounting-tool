@@ -73,48 +73,41 @@ Example:
         });
     }
 
-    let targetSheet = workbook.getWorksheet(targetSheetName);
-
-    if (!targetSheet) {
-        console.log(`  Target sheet '${targetSheetName}' not found. Creating it...`);
-        targetSheet = workbook.addWorksheet(targetSheetName);
-        // Initialize headers if adding new sheet
-        if (accountType === 'cc') {
-            targetSheet.columns = [
-                { header: 'Date', key: 'date', width: 12 },
-                { header: 'Member', key: 'member', width: 15 },
-                { header: 'Description', key: 'desc', width: 35 },
-                { header: 'Amount', key: 'amount', width: 15 },
-                { header: 'Category', key: 'category', width: 20 },
-                { header: 'Sub-Category', key: 'subcategory', width: 20 },
-                { header: 'Extended Details', key: 'extended', width: 30 },
-                { header: 'Vendor', key: 'vendor', width: 20 },
-                { header: 'Customer', key: 'customer', width: 20 },
-                { header: 'Account #', key: 'account', width: 15 },
-                { header: 'Receipt', key: 'receipt', width: 10 },
-                { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
-            ];
-        } else {
-            targetSheet.columns = [
-                { header: 'Date', key: 'date', width: 12 },
-                { header: 'Description', key: 'desc', width: 35 },
-                { header: 'Amount', key: 'amount', width: 15 },
-                { header: 'Category', key: 'category', width: 20 },
-                { header: 'Sub-Category', key: 'subcategory', width: 20 },
-                { header: 'Extended Details', key: 'extended', width: 30 },
-                { header: 'Vendor', key: 'vendor', width: 20 },
-                { header: 'Customer', key: 'customer', width: 20 },
-                { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
-            ];
+    // --- Dynamic Sheet Handling ---
+    // If clearing, we must remove the sheet entirely to wipe any existing Table definitions cleanly.
+    // 'spliceRows' is known to corrupt Table XML in exceljs.
+    if (clearFlag) {
+        let existingSheet = workbook.getWorksheet(targetSheetName);
+        if (existingSheet) {
+            console.log(`  (Clear) Removed existing sheet '${targetSheetName}' to prevent Table corruption.`);
+            workbook.removeWorksheet(existingSheet.id);
         }
     }
 
-    // Clear Logic (Metadata-preserving)
-    if (clearFlag) {
-        console.log(`  Clearing existing data in '${targetSheetName}'...`);
-        // Remove all rows except the header
-        if (targetSheet.rowCount > 1) {
-            targetSheet.spliceRows(2, targetSheet.rowCount - 1);
+    // Get or Create
+    let targetSheet = workbook.getWorksheet(targetSheetName);
+
+    if (!targetSheet) {
+        console.log(`  Creating sheet '${targetSheetName}'...`);
+        targetSheet = workbook.addWorksheet(targetSheetName);
+
+        // Define Headers based on Account Type
+        // We set these manually in the Data Prepare phase for robust Table creation, 
+        // but we define column metadata here for width.
+        // Note: We avoid 'targetSheet.columns =' which conflicts with Tables in some versions.
+        if (accountType === 'cc') {
+            targetSheet.columns = [
+                { width: 12 }, { width: 15 }, { width: 35 }, { width: 15 }, // Date, Mem, Desc, Amt
+                { width: 20 }, { width: 20 }, { width: 30 },            // Cat, Sub, Ext
+                { width: 20 }, { width: 20 }, { width: 15 },            // Vend, Cust, Acct
+                { width: 10 }, { width: 15 }                            // Rec, Rpt
+            ];
+        } else {
+            targetSheet.columns = [
+                { width: 12 }, { width: 35 }, { width: 15 },            // Date, Desc, Amt
+                { width: 20 }, { width: 20 }, { width: 30 },            // Cat, Sub, Ext
+                { width: 20 }, { width: 20 }, { width: 15 }             // Vend, Cust, Rpt
+            ];
         }
     }
 
