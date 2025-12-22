@@ -10,10 +10,10 @@ async function runTest() {
     fs.renameSync('LLC_Accounting_Template.xlsx', TEST_FILE);
 
     console.log('\n--- Phase 2: Load Bank Transactions ---');
-    execSync(`node load_transactions.js example_bank.csv bank ${TEST_FILE} --clear`, { stdio: 'inherit' });
+    execSync(`node load_transactions.js tests/example_bank.csv bank ${TEST_FILE} --clear`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 3: Load CC Transactions ---');
-    execSync(`node load_transactions.js example_cc.csv cc ${TEST_FILE} --clear`, { stdio: 'inherit' });
+    execSync(`node load_transactions.js tests/example_cc.csv cc ${TEST_FILE} --clear`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 4: Categorize Transactions (Simulated) ---');
     const workbook = new ExcelJS.Workbook();
