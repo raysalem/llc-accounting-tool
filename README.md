@@ -24,6 +24,23 @@ Bank statements and Credit Card statements often use different polarities (e.g.,
 - **Dynamic Column Mapping**: Transactions sheets no longer require a fixed layout. The tool detects "Date", "Amount", "Category", etc., based on the headers in the row specified by the "Header Row" offset in the `Setup` tab.
 - **Ledger Integration**: Manual entries in the `Ledger` tab with categories matching account types (e.g., "Bank" or "CC") or sheet names are automatically incorporated into the calculated balances on the Balance Sheet.
 - **Transaction Tabs**: (e.g., Bank Transactions, Credit Card Transactions) Where imported or manual line items live.
+- **Header Detection**: The tool automatically scans the first 5 rows to identify where your data headers ("Date", "Amount", "Category") begin, skipping summary rows like "Total" or "Balance" that might appear at the top of exports.
+
+### 2a. How to Use the Ledger
+The **Ledger** tab is for manual double-entry accounting. It directly impacts your calculated Balance Sheet totals.
+
+**Polarity Rules (Bank Accounts / Assets):**
+- **Debit (Dr)**: **INCREASES** the account balance. Use this for Opening Balances, Deposits, or Capital Injections.
+- **Credit (Cr)**: **DECREASES** the account balance. Use this for manual Fees, Withdrawals, or Transfers out.
+- **Formula**: `Bank Balance = Total Bank Transactions + (Ledger Debits to Bank - Ledger Credits to Bank)`
+
+**Example - Opening Balance:**
+If your bank account started the year with $1,000, enter a row in the Ledger:
+- **Date**: 01/01/202x
+- **Description**: Opening Balance
+- **Category**: [Account Name] (e.g., "Bank Transactions")
+- **Debit**: 1000
+- **Credit**: 0
 
 ### 3. Data Integrity Checker
 The tool validates every transaction during the report generation process:
