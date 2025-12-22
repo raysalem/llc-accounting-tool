@@ -45,6 +45,20 @@ A node.js-based suite of tools for managing LLC accounting using Excel as the pr
    node update_financials.js
    ```
 
+## Running the Integration Test
+
+You can verify the entire workflow (template generation -> transaction loading -> report generation) by running the integration test:
+
+```bash
+node run_integration_test.js
+```
+
+This script:
+1.  Generates a fresh template.
+2.  Loads data from `example_bank.csv` and `example_cc.csv`.
+3.  Simulates transaction categorization.
+4.  Prints a financial report and verifies the totals.
+
 ## Key Scripts
 
 - `generate_excel.js`: Creates the initial boilerplate Excel structure.
