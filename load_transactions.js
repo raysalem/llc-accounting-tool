@@ -36,45 +36,44 @@ async function loadTransactions() {
 
     if (!targetSheet) { console.error(`Target sheet '${targetSheetName}' not found.`); return; }
 
-    // Clear Logic (Nuclear Re-creation)
+    // Clear Logic (Metadata-preserving)
     if (clearFlag) {
-        console.log(`  (Nuclear Option) Deleting and Re-creating '${targetSheetName}'...`);
-        workbook.removeWorksheet(targetSheet.id);
-        targetSheet = workbook.addWorksheet(targetSheetName);
-
-        if (accountType === 'cc') {
-            // Unified Layout for CC
-            targetSheet.columns = [
-                { header: 'Date', key: 'date', width: 12 },            // [1]
-                { header: 'Member', key: 'member', width: 15 },        // [2]
-                { header: 'Description', key: 'desc', width: 35 },     // [3]
-                { header: 'Amount', key: 'amount', width: 15 },        // [4]
-                { header: 'Category', key: 'category', width: 20 },    // [5] 
-                { header: 'Sub-Category', key: 'subcategory', width: 20 }, // [6]
-                { header: 'Extended Details', key: 'extended', width: 30 }, // [7]
-                { header: 'Vendor', key: 'vendor', width: 20 },        // [8]
-                { header: 'Customer', key: 'customer', width: 20 },    // [9]
-                { header: 'Account #', key: 'account', width: 15 },    // [10]
-                { header: 'Receipt', key: 'receipt', width: 10 },      // [11]
-                { header: 'Report Type (Auto)', key: 'report_type', width: 15 }, // [12]
-            ];
-            targetSheet.autoFilter = { from: 'A1', to: 'L1' };
-        } else {
-            // Simplified Layout for Bank
-            // [1]Date [2]Desc [3]Amount [4]Cat [5]Sub [6]Ext [7]Vend [8]Cust [9]Report
-            targetSheet.columns = [
-                { header: 'Date', key: 'date', width: 12 },            // [1]
-                { header: 'Description', key: 'desc', width: 35 },     // [2]
-                { header: 'Amount', key: 'amount', width: 15 },        // [3]
-                { header: 'Category', key: 'category', width: 20 },    // [4]
-                { header: 'Sub-Category', key: 'subcategory', width: 20 }, // [5]
-                { header: 'Extended Details', key: 'extended', width: 30 }, // [6]
-                { header: 'Vendor', key: 'vendor', width: 20 },        // [7]
-                { header: 'Customer', key: 'customer', width: 20 },    // [8]
-                { header: 'Report Type (Auto)', key: 'report_type', width: 15 }, // [9]
-            ];
-            targetSheet.autoFilter = { from: 'A1', to: 'I1' };
+        console.log(`  Clearing existing data in '${targetSheetName}'...`);
+        // Remove all rows except the header
+        if (targetSheet.rowCount > 1) {
+            targetSheet.spliceRows(2, targetSheet.rowCount - 1);
         }
+    }
+
+    if (accountType === 'cc') {
+        // [1]Date [2]Member [3]Desc [4]Amount [5]Cat [6]Sub [7]Ext [8]Vend [9]Cust [10]Acct [11]Rec [12]Report
+        targetSheet.columns = [
+            { header: 'Date', key: 'date', width: 12 },
+            { header: 'Member', key: 'member', width: 15 },
+            { header: 'Description', key: 'desc', width: 35 },
+            { header: 'Amount', key: 'amount', width: 15 },
+            { header: 'Category', key: 'category', width: 20 },
+            { header: 'Sub-Category', key: 'subcategory', width: 20 },
+            { header: 'Extended Details', key: 'extended', width: 30 },
+            { header: 'Vendor', key: 'vendor', width: 20 },
+            { header: 'Customer', key: 'customer', width: 20 },
+            { header: 'Account #', key: 'account', width: 15 },
+            { header: 'Receipt', key: 'receipt', width: 10 },
+            { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
+        ];
+    } else {
+        // [1]Date [2]Desc [3]Amount [4]Cat [5]Sub [6]Ext [7]Vend [8]Cust [9]Report
+        targetSheet.columns = [
+            { header: 'Date', key: 'date', width: 12 },
+            { header: 'Description', key: 'desc', width: 35 },
+            { header: 'Amount', key: 'amount', width: 15 },
+            { header: 'Category', key: 'category', width: 20 },
+            { header: 'Sub-Category', key: 'subcategory', width: 20 },
+            { header: 'Extended Details', key: 'extended', width: 30 },
+            { header: 'Vendor', key: 'vendor', width: 20 },
+            { header: 'Customer', key: 'customer', width: 20 },
+            { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
+        ];
     }
 
     const records = [];
