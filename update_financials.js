@@ -319,8 +319,15 @@ async function updateFinancials() {
     if (printOnly) return;
 
     // --- 6. Summary Sheet Update ---
-    if (summarySheet) workbook.removeWorksheet(summarySheet.id);
-    summarySheet = workbook.addWorksheet('Summary');
+    if (!summarySheet) {
+        summarySheet = workbook.addWorksheet('Summary');
+    } else {
+        // Clear existing content to avoid breaking workbook references/Tables
+        summarySheet.eachRow((row, r) => {
+            row.eachCell(cell => { cell.value = null; cell.style = {}; });
+        });
+    }
+
     summarySheet.getCell('A1').value = `Financial Summary (${new Date().toLocaleString()})`;
     summarySheet.getCell('A1').font = { size: 14, bold: true };
 
