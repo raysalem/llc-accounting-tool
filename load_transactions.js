@@ -73,40 +73,39 @@ Example:
         });
     }
 
-    // --- Dynamic Sheet Handling ---
-    // If clearing, we must remove the sheet entirely to wipe any existing Table definitions cleanly.
-    // 'spliceRows' is known to corrupt Table XML in exceljs.
-    if (clearFlag) {
-        let existingSheet = workbook.getWorksheet(targetSheetName);
-        if (existingSheet) {
-            console.log(`  (Clear) Removed existing sheet '${targetSheetName}' to prevent Table corruption.`);
-            workbook.removeWorksheet(existingSheet.id);
-        }
-    }
-
-    // Get or Create
+    // --- Target Sheet Setup ---
     let targetSheet = workbook.getWorksheet(targetSheetName);
 
     if (!targetSheet) {
         console.log(`  Creating sheet '${targetSheetName}'...`);
         targetSheet = workbook.addWorksheet(targetSheetName);
-
-        // Define Headers based on Account Type
-        // We set these manually in the Data Prepare phase for robust Table creation, 
-        // but we define column metadata here for width.
-        // Note: We avoid 'targetSheet.columns =' which conflicts with Tables in some versions.
+        // Define Headers only for new sheets
         if (accountType === 'cc') {
             targetSheet.columns = [
-                { width: 12 }, { width: 15 }, { width: 35 }, { width: 15 }, // Date, Mem, Desc, Amt
-                { width: 20 }, { width: 20 }, { width: 30 },            // Cat, Sub, Ext
-                { width: 20 }, { width: 20 }, { width: 15 },            // Vend, Cust, Acct
-                { width: 10 }, { width: 15 }                            // Rec, Rpt
+                { header: 'Date', key: 'date', width: 12 },
+                { header: 'Member', key: 'member', width: 15 },
+                { header: 'Description', key: 'desc', width: 35 },
+                { header: 'Amount', key: 'amount', width: 15 },
+                { header: 'Category', key: 'category', width: 20 },
+                { header: 'Sub-Category', key: 'subcategory', width: 20 },
+                { header: 'Extended Details', key: 'extended', width: 30 },
+                { header: 'Vendor', key: 'vendor', width: 20 },
+                { header: 'Customer', key: 'customer', width: 20 },
+                { header: 'Account #', key: 'account', width: 15 },
+                { header: 'Receipt', key: 'receipt', width: 10 },
+                { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
             ];
         } else {
             targetSheet.columns = [
-                { width: 12 }, { width: 35 }, { width: 15 },            // Date, Desc, Amt
-                { width: 20 }, { width: 20 }, { width: 30 },            // Cat, Sub, Ext
-                { width: 20 }, { width: 20 }, { width: 15 }             // Vend, Cust, Rpt
+                { header: 'Date', key: 'date', width: 12 },
+                { header: 'Description', key: 'desc', width: 35 },
+                { header: 'Amount', key: 'amount', width: 15 },
+                { header: 'Category', key: 'category', width: 20 },
+                { header: 'Sub-Category', key: 'subcategory', width: 20 },
+                { header: 'Extended Details', key: 'extended', width: 30 },
+                { header: 'Vendor', key: 'vendor', width: 20 },
+                { header: 'Customer', key: 'customer', width: 20 },
+                { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
             ];
         }
     }
@@ -122,6 +121,14 @@ Example:
         console.log('  Adjusting layout: Inserting 2 rows at top for Totals...');
         targetSheet.spliceRows(1, 0, [], []);
         headerRowIdx = 3;
+    }
+
+    // Clear Logic (Safe Mode)
+    // We clear rows below the header to preserve sheet structure/ID
+    if (clearFlag && targetSheet.rowCount > headerRowIdx) {
+        console.log(`  Clearing existing data in '${targetSheetName}'...`);
+        // Note: spliceRows can be slow for huge sheets, but sets state correctly
+        targetSheet.spliceRows(headerRowIdx + 1, targetSheet.rowCount - headerRowIdx);
     }
 
     // Set Formulas
@@ -277,54 +284,40 @@ Example:
         rowsToAdd.push(newRow);
     });
 
-    // --- Table Management ---
-    // Check if a table already exists to avoid corruption
-    const hasTable = targetSheet.tables && Object.keys(targetSheet.tables).length > 0;
+    // --- Insert Data ---
+    targetSheet.addRows(rowsToAdd);
 
-    if (hasTable) {
-        console.log('  Existing Excel Table detected. Appending rows to it...');
-        // Just add rows normally, Excel should expand the table
-        targetSheet.addRows(rowsToAdd);
-    } else {
-        console.log('  No Excel Table found. Creating one...');
-        // Create table with data
-        // Define columns matching the sheet structure request
-        let tableCols = [];
-        if (accountType === 'cc') {
-            tableCols = [
-                { name: 'Date' }, { name: 'Member' }, { name: 'Description' }, { name: 'Amount' },
-                { name: 'Category' }, { name: 'Sub-Category' }, { name: 'Extended Details' },
-                { name: 'Vendor' }, { name: 'Customer' }, { name: 'Account #' }, { name: 'Receipt' },
-                { name: 'Report Type (Auto)' }
-            ];
-        } else {
-            tableCols = [
-                { name: 'Date' }, { name: 'Description' }, { name: 'Amount' },
-                { name: 'Category' }, { name: 'Sub-Category' }, { name: 'Extended Details' },
-                { name: 'Vendor' }, { name: 'Customer' }, { name: 'Report Type (Auto)' }
-            ];
+    // --- Visual Table & Formatting (Avoid XML Corruption) ---
+    // Instead of addTable (which conflicts with updates), we apply AutoFilter and Styling manually.
+    const finalLastRow = targetSheet.rowCount;
+    if (finalLastRow >= headerRowIdx) {
+        // Apply AutoFilter to the range
+        // Note: targetSheet.columnCount might be excessive, restrict to data width
+        const lastCol = accountType === 'cc' ? 12 : 9;
+
+        targetSheet.autoFilter = {
+            from: { row: headerRowIdx, column: 1 },
+            to: { row: finalLastRow, column: lastCol }
+        };
+
+        // Header Styling
+        const headerRow = targetSheet.getRow(headerRowIdx);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4F81BD' } // Standard Excel Blue
+        };
+
+        // Border Styling for Data
+        for (let r = headerRowIdx + 1; r <= finalLastRow; r++) {
+            const row = targetSheet.getRow(r);
+            // row.border = { bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } } }; // Light grey border
         }
-
-        // We need to write the data differently for addTable
-        // addTable expects 'rows' as array of arrays, and it writes everything relative to 'ref'
-        // Since we already have the Header at Row 3 (headerRowIdx), we put the table there.
-        // However, addTable writes the header too. We should overwrite the existing header to be safe or ensure it matches.
-
-        targetSheet.addTable({
-            name: `Table_${targetSheetName.replace(/\s/g, '')}_${Date.now()}`,
-            ref: `A${headerRowIdx}`,
-            headerRow: true,
-            totalsRow: false,
-            style: {
-                theme: 'TableStyleMedium2',
-                showRowStripes: true,
-            },
-            columns: tableCols,
-            rows: rowsToAdd
-        });
     }
 
     console.log(`Successfully processed ${rowsToAdd.length} transactions in ${targetSheetName}.`);
+    console.log(`  (Note: Applied AutoFilter and Sytling. Formal Excel 'Tables' disabled to prevent file corruption on update.)`);
 
     // Apply Validation & Formulas (Post-Insert)
     // Adjust start row for loop: header is at 3, data starts at 4
