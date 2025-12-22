@@ -73,6 +73,16 @@ Example:
         });
     }
 
+    // --- Strict Clear Logic: Delete & Recreate ---
+    // This is the "Nuclear Option" to guarantee a 100% clean state (no lingering categories or metadata).
+    if (clearFlag) {
+        const existingSheet = workbook.getWorksheet(targetSheetName);
+        if (existingSheet) {
+            console.log(`  [CLEAR] 'Nuclear' option active: Deleting sheet '${targetSheetName}' to ensure a clean start.`);
+            workbook.removeWorksheet(existingSheet.id);
+        }
+    }
+
     // --- Target Sheet Setup ---
     let targetSheet = workbook.getWorksheet(targetSheetName);
 
@@ -123,24 +133,6 @@ Example:
         headerRowIdx = 3;
     }
 
-    // Clear Logic (Safe Mode)
-    // We clear rows below the header to preserve sheet structure/ID
-    if (clearFlag) {
-        // Use lastRow.number to find the true bottom of the sheet
-        const lastRowNum = targetSheet.lastRow ? targetSheet.lastRow.number : targetSheet.rowCount;
-
-        if (lastRowNum > headerRowIdx) {
-            const rowsToDelete = lastRowNum - headerRowIdx;
-            console.log(`  [CLEAR] Removing ${rowsToDelete} rows from index ${headerRowIdx + 1} to ${lastRowNum}...`);
-
-            // Remove AutoFilter to prevent phantom ranges
-            if (targetSheet.autoFilter) targetSheet.autoFilter = null;
-
-            targetSheet.spliceRows(headerRowIdx + 1, rowsToDelete);
-        } else {
-            console.log(`  [CLEAR] Sheet appears empty (Last Row: ${lastRowNum}, Header: ${headerRowIdx}). Nothing to delete.`);
-        }
-    }
 
     // Set Formulas
     const amtCol = accountType === 'cc' ? 'D' : 'C'; // Amount Column Letter
@@ -189,10 +181,12 @@ Example:
             // Fallback for description if 'name' not found (common in bank csvs vs quickbooks)
             const memoIdx = headers.indexOf('memo');
             const amtIdx = headers.indexOf('amount');
+            const acctIdx = headers.indexOf('account') !== -1 ? headers.indexOf('account') : headers.indexOf('account number');
 
             if (dateIdx !== -1) record.date = cleanValues[dateIdx];
             if (nameIdx !== -1) record.desc = cleanValues[nameIdx];
             if (memoIdx !== -1) record.extended = cleanValues[memoIdx];
+            if (acctIdx !== -1) record.account = cleanValues[acctIdx];
             if (amtIdx !== -1) {
                 let amtStr = cleanValues[amtIdx];
                 if (amtStr) amtStr = amtStr.replace(/[$,]/g, '');
@@ -226,7 +220,8 @@ Example:
             headerRowIndex = 7;
             colMap = {
                 'date': 1, 'receipt': 2, 'description': 3, 'card member': 4,
-                'account #': 5, 'amount': 6, 'extended details': 7
+                'account #': 5, 'amount': 6, 'extended details': 7,
+                'account number': 5 // Fallback alias
             };
         }
 
@@ -247,7 +242,7 @@ Example:
                 member: getVal('card member') || getVal('member'),
                 extended: getVal('extended details'),
                 receipt: getVal('receipt'),
-                account: getVal('account') || getVal('account #')
+                account: getVal('account') || getVal('account #') || getVal('account number')
             };
 
             // Enhanced Junk Filter
