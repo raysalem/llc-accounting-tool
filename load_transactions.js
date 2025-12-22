@@ -210,6 +210,14 @@ async function loadTransactions() {
                 receipt: getVal('receipt'),
                 account: getVal('account') || getVal('account #')
             };
+
+            // Enhanced Junk Filter
+            if (!rec.date) return;
+            // Filter out obviously empty rows (desc & amount missing)
+            if ((!rec.desc || rec.desc.trim() === '') && (!rec.amount || parseFloat(rec.amount) === 0)) return;
+            // Filter out summary/total rows often found in exports
+            if (rec.desc && /total|balance|sum/i.test(rec.desc)) return;
+
             if (rec.date) records.push(rec);
         });
     }

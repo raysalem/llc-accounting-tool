@@ -132,7 +132,23 @@ async function updateFinancials() {
         const pType = isCC ? 'cc' : 'bank';
 
         // Dynamic Map detection
-        const headerRowIndex = config.offset || 1;
+        let headerRowIndex = config.offset || 1;
+
+        // Smarter scan: Check rows 1-5 for actual header signature to handle shifted layouts (e.g. Total rows at top)
+        for (let r = 1; r <= 5; r++) {
+            const rowVals = sheet.getRow(r).values;
+            if (Array.isArray(rowVals)) {
+                // exceljs values are 1-indexed (index 0 is null/undefined usually), simplify join
+                const rowStr = rowVals.map(v => v ? v.toString().toLowerCase() : '').join(' ');
+                if (rowStr.includes('date') && (rowStr.includes('amount') || rowStr.includes('category'))) {
+                    headerRowIndex = r;
+                    // crucial: update the config offset so we skip rows before this
+                    config.offset = r;
+                    break;
+                }
+            }
+        }
+
         const headerRow = sheet.getRow(headerRowIndex);
         const map = isCC ? { ...ccMapDefault } : { ...bankMapDefault };
 
@@ -256,9 +272,18 @@ async function updateFinancials() {
 
             if (matchingConfig) {
                 const isMatchingCC = matchingConfig.type.toLowerCase().includes('cc') || matchingConfig.type.toLowerCase().includes('credit');
-                // Debiting an asset increase balance. Crediting an asset decreases balance.
-                if (isMatchingCC) ccTotal += (dr - cr); else bankTotal += (dr - cr);
-                if (showChecker) console.log(`Ledger Row ${r} [${displayDate}]: Applied ${dr - cr} impact to "${matchingConfig.name}" balance.`);
+                // Standard Asset: Dr increases (+), Cr decreases (-)
+                // Standard Liability (CC): Dr decreases liability (payment), Cr increases liability (purchase).
+                // However, since we track CC balance as negative for debt, we use the same (dr - cr) logic:
+                // Payment (Dr 100) -> +100 to balance (reduces debt from -500 to -400).
+                // Purchase (Cr 100) -> -100 to balance (increases debt from -500 to -600).
+                const impact = (dr - cr);
+
+                if (isMatchingCC) ccTotal += impact; else bankTotal += impact;
+
+                if (showChecker) {
+                    console.log(`Ledger Row ${r} [${displayDate}]: Applied ${impact} (Dr:${dr} - Cr:${cr}) to "${matchingConfig.name}".`);
+                }
             }
         }
     });
