@@ -1,5 +1,4 @@
 node_modules/
 *.xlsx
-*.csv
 .DS_Store
 .env
