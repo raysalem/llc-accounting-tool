@@ -31,10 +31,55 @@ async function loadTransactions() {
         throw e;
     }
 
-    const targetSheetName = accountType === 'cc' ? 'Credit Card Transactions' : 'Bank Transactions';
+    // --- Find Target Sheet Name from Setup (Resiliency) ---
+    let targetSheetName = accountType === 'cc' ? 'Credit Card Transactions' : 'Bank Transactions';
+    const setupSheet = workbook.getWorksheet('Setup');
+    if (setupSheet) {
+        setupSheet.eachRow((row, r) => {
+            if (r === 1) return;
+            const sName = row.getCell(9).value; // Col I
+            const sType = (row.getCell(10).value || '').toString().toLowerCase(); // Col J
+            if (sName && (sType === accountType || (accountType === 'bank' && sType.includes('bank')) || (accountType === 'cc' && sType.includes('cc')))) {
+                targetSheetName = sName.toString();
+            }
+        });
+    }
+
     let targetSheet = workbook.getWorksheet(targetSheetName);
 
-    if (!targetSheet) { console.error(`Target sheet '${targetSheetName}' not found.`); return; }
+    if (!targetSheet) {
+        console.log(`  Target sheet '${targetSheetName}' not found. Creating it...`);
+        targetSheet = workbook.addWorksheet(targetSheetName);
+        // Initialize headers if adding new sheet
+        if (accountType === 'cc') {
+            targetSheet.columns = [
+                { header: 'Date', key: 'date', width: 12 },
+                { header: 'Member', key: 'member', width: 15 },
+                { header: 'Description', key: 'desc', width: 35 },
+                { header: 'Amount', key: 'amount', width: 15 },
+                { header: 'Category', key: 'category', width: 20 },
+                { header: 'Sub-Category', key: 'subcategory', width: 20 },
+                { header: 'Extended Details', key: 'extended', width: 30 },
+                { header: 'Vendor', key: 'vendor', width: 20 },
+                { header: 'Customer', key: 'customer', width: 20 },
+                { header: 'Account #', key: 'account', width: 15 },
+                { header: 'Receipt', key: 'receipt', width: 10 },
+                { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
+            ];
+        } else {
+            targetSheet.columns = [
+                { header: 'Date', key: 'date', width: 12 },
+                { header: 'Description', key: 'desc', width: 35 },
+                { header: 'Amount', key: 'amount', width: 15 },
+                { header: 'Category', key: 'category', width: 20 },
+                { header: 'Sub-Category', key: 'subcategory', width: 20 },
+                { header: 'Extended Details', key: 'extended', width: 30 },
+                { header: 'Vendor', key: 'vendor', width: 20 },
+                { header: 'Customer', key: 'customer', width: 20 },
+                { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
+            ];
+        }
+    }
 
     // Clear Logic (Metadata-preserving)
     if (clearFlag) {
