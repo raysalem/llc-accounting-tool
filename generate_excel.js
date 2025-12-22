@@ -2,6 +2,24 @@ const ExcelJS = require('exceljs');
 const { execSync } = require('child_process');
 const pkg = require('./package.json');
 
+// Help Support
+if (process.argv.includes('--help')) {
+    console.log(`
+Usage: node generate_excel.js [outputFilename]
+
+Description:
+  Generates the core LLC Accounting Template Excel file.
+  Includes standard tabs: Setup, Ledger, Bank Transactions, Credit Card Transactions, and Summary.
+
+Arguments:
+  [outputFilename]   (Optional) Name of the file to generate. Defaults to "LLC_Accounting_Template.xlsx".
+
+Example:
+  node generate_excel.js "My_Consulting_Books_2025.xlsx"
+    `);
+    process.exit(0);
+}
+
 async function createTemplate() {
     const filename = 'LLC_Accounting_Template.xlsx';
     const workbook = new ExcelJS.Workbook();
