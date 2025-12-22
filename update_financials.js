@@ -218,37 +218,46 @@ async function updateFinancials() {
     const hasIssues = uncategorizedBank > 0 || uncategorizedCC > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0;
     if (hasIssues) {
         console.log('\n--- DATA INTEGRITY ISSUES ---');
-        if (uncategorizedBank > 0) console.log(`[!] Bank: ${uncategorizedBank} rows missing category`);
-        if (uncategorizedCC > 0) console.log(`[!] CC: ${uncategorizedCC} rows missing category`);
 
-        const catSet = new Set(illegalCategories.map(c => c.value));
-        if (catSet.size > 0) console.log(`[!] Illegal Categories: ${Array.from(catSet).join(', ')}`);
+        const allIssueSheets = new Set([
+            ...uncategorizedDetails.map(d => d.sheet),
+            ...illegalCategories.map(c => c.sheet),
+            ...illegalVendors.map(v => v.sheet),
+            ...illegalCustomers.map(c => c.sheet)
+        ]);
 
-        const vendSet = new Set(illegalVendors.map(v => v.value));
-        if (vendSet.size > 0) console.log(`[!] Unknown Vendors: ${Array.from(vendSet).join(', ')}`);
+        allIssueSheets.forEach(sheetName => {
+            const displaySheet = sheetName.toUpperCase();
+            console.log(`\n>> Tab: ${displaySheet}`);
 
-        const custSet = new Set(illegalCustomers.map(c => c.value));
-        if (custSet.size > 0) console.log(`[!] Unknown Customers: ${Array.from(custSet).join(', ')}`);
+            const sheetUncat = uncategorizedDetails.filter(d => d.sheet === sheetName);
+            if (sheetUncat.length > 0) console.log(`  [!] ${sheetUncat.length} rows missing category`);
 
-        if (showChecker) {
-            console.log('\n--- Checker Details ---');
-            if (uncategorizedDetails.length > 0) {
-                console.log('\nUncategorized Rows:');
-                uncategorizedDetails.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: ${d.desc}`));
+            const sheetIllegalCats = illegalCategories.filter(d => d.sheet === sheetName);
+            if (sheetIllegalCats.length > 0) {
+                const uniqueCats = new Set(sheetIllegalCats.map(c => c.value));
+                console.log(`  [!] Illegal Categories: ${Array.from(uniqueCats).join(', ')}`);
             }
-            if (illegalCategories.length > 0) {
-                console.log('\nIllegal Categories:');
-                illegalCategories.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: "${d.value}"`));
+
+            const sheetIllegalVendors = illegalVendors.filter(d => d.sheet === sheetName);
+            if (sheetIllegalVendors.length > 0) {
+                const uniqueVends = new Set(sheetIllegalVendors.map(v => v.value));
+                console.log(`  [!] Unknown Vendors: ${Array.from(uniqueVends).join(', ')}`);
             }
-            if (illegalVendors.length > 0) {
-                console.log('\nUnknown Vendors:');
-                illegalVendors.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: "${d.value}"`));
+
+            const sheetIllegalCustomers = illegalCustomers.filter(d => d.sheet === sheetName);
+            if (sheetIllegalCustomers.length > 0) {
+                const uniqueCusts = new Set(sheetIllegalCustomers.map(c => c.value));
+                console.log(`  [!] Unknown Customers: ${Array.from(uniqueCusts).join(', ')}`);
             }
-            if (illegalCustomers.length > 0) {
-                console.log('\nUnknown Customers:');
-                illegalCustomers.forEach(d => console.log(`  - [${d.sheet.toUpperCase()}] Row ${d.row}: "${d.value}"`));
+
+            if (showChecker) {
+                sheetUncat.forEach(d => console.log(`      - Row ${d.row}: MISSING CATEGORY ("${d.desc}")`));
+                sheetIllegalCats.forEach(d => console.log(`      - Row ${d.row}: ILLEGAL CATEGORY "${d.value}"`));
+                sheetIllegalVendors.forEach(d => console.log(`      - Row ${d.row}: UNKNOWN VENDOR "${d.value}"`));
+                sheetIllegalCustomers.forEach(d => console.log(`      - Row ${d.row}: UNKNOWN CUSTOMER "${d.value}"`));
             }
-        }
+        });
     }
 
     if (printOnly) return;
@@ -269,26 +278,39 @@ async function updateFinancials() {
     summarySheet.getCell(`A${row}`).font = { bold: true }; row++;
     reports.bs.forEach(r => { summarySheet.getCell(`A${row}`).value = r.label; summarySheet.getCell(`B${row}`).value = r.value; row++; });
 
-    // --- Integrity Report in Excel ---
-    row += 3;
-    summarySheet.getCell(`A${row}`).value = 'Data Integrity Check';
-    summarySheet.getCell(`A${row}`).font = { bold: true, color: { argb: 'FFFF0000' } }; row++;
+    // --- Integrity Report in Excel (Per Tab) ---
+    if (hasIssues) {
+        row += 3;
+        summarySheet.getCell(`A${row}`).value = 'Data Integrity Check (By Tab)';
+        summarySheet.getCell(`A${row}`).font = { bold: true, color: { argb: 'FFFF0000' } }; row++;
 
-    const addIssue = (label, val) => {
-        summarySheet.getCell(`A${row}`).value = label;
-        summarySheet.getCell(`B${row}`).value = val;
-        row++;
-    };
+        const allIssueSheets = new Set([
+            ...uncategorizedDetails.map(d => d.sheet),
+            ...illegalCategories.map(c => c.sheet),
+            ...illegalVendors.map(v => v.sheet),
+            ...illegalCustomers.map(c => c.sheet)
+        ]);
 
-    addIssue('Uncategorized Bank Rows', uncategorizedBank);
-    addIssue('Uncategorized CC Rows', uncategorizedCC);
-    const catFinal = Array.from(new Set(illegalCategories.map(c => c.value))).join(', ') || 'None';
-    const vendFinal = Array.from(new Set(illegalVendors.map(v => v.value))).join(', ') || 'None';
-    const custFinal = Array.from(new Set(illegalCustomers.map(v => v.value))).join(', ') || 'None';
+        allIssueSheets.forEach(sheetName => {
+            summarySheet.getCell(`A${row}`).value = `Tab: ${sheetName.toUpperCase()}`;
+            summarySheet.getCell(`A${row}`).font = { bold: true };
+            row++;
 
-    addIssue('Illegal Categories Found', catFinal);
-    addIssue('Unknown Vendors Found', vendFinal);
-    addIssue('Unknown Customers Found', custFinal);
+            const uncat = uncategorizedDetails.filter(d => d.sheet === sheetName).length;
+            if (uncat > 0) { summarySheet.getCell(`A${row}`).value = '  Uncategorized Rows'; summarySheet.getCell(`B${row}`).value = uncat; row++; }
+
+            const cats = Array.from(new Set(illegalCategories.filter(d => d.sheet === sheetName).map(c => c.value))).join(', ');
+            if (cats) { summarySheet.getCell(`A${row}`).value = '  Illegal Categories'; summarySheet.getCell(`B${row}`).value = cats; row++; }
+
+            const vends = Array.from(new Set(illegalVendors.filter(d => d.sheet === sheetName).map(v => v.value))).join(', ');
+            if (vends) { summarySheet.getCell(`A${row}`).value = '  Unknown Vendors'; summarySheet.getCell(`B${row}`).value = vends; row++; }
+
+            const custs = Array.from(new Set(illegalCustomers.filter(d => d.sheet === sheetName).map(c => c.value))).join(', ');
+            if (custs) { summarySheet.getCell(`A${row}`).value = '  Unknown Customers'; summarySheet.getCell(`B${row}`).value = custs; row++; }
+
+            row++; // spacer
+        });
+    }
 
     try {
         await workbook.xlsx.writeFile(filename);
