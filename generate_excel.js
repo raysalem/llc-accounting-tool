@@ -17,6 +17,7 @@ async function createTemplate() {
         { header: 'Sheet Name (Config)', key: 'sheetname', width: 30 },
         { header: 'Account Type', key: 'sheettype', width: 15 },
         { header: 'Flip Polarity? (Yes/No)', key: 'flip', width: 20 },
+        { header: 'Header Row', key: 'offset', width: 15 },
     ];
 
     const categories = [
@@ -31,9 +32,12 @@ async function createTemplate() {
     setupSheet.getCell('I2').value = 'Bank Transactions';
     setupSheet.getCell('J2').value = 'Bank';
     setupSheet.getCell('K2').value = 'No';
+    setupSheet.getCell('L2').value = 1;
+
     setupSheet.getCell('I3').value = 'Credit Card Transactions';
     setupSheet.getCell('J3').value = 'CC';
     setupSheet.getCell('K3').value = 'Yes'; // Default to Yes for CC
+    setupSheet.getCell('L3').value = 1;
 
     const bankSheet = workbook.addWorksheet('Bank Transactions');
     bankSheet.columns = [

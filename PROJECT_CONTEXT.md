@@ -26,6 +26,7 @@ To reconcile these:
     - `Sheet Name`: Name of the tab.
     - `Account Type`: `Bank` or `CC` (determines column mapping).
     - `Flip Polarity?`: Set to `Yes` to multiply all values by -1 (used to unify CC charges).
+    - `Header Row`: The row number where the table header starts (e.g., 1 if headers are on top, 5 if there is extra info above the table). Transactions are read starting from the next row.
 
 ### 2. Usage Guide
 1.  **Configure**: Define your sheets and polarity in Setup.

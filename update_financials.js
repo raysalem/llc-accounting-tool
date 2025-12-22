@@ -56,19 +56,21 @@ async function updateFinancials() {
         const confSheetName = row.getCell(9).value;
         const confType = row.getCell(10).value;
         const confFlip = row.getCell(11).value;
+        const confOffset = row.getCell(12).value;
 
         if (confSheetName && confType) {
             sheetConfigs.push({
                 name: confSheetName.toString().trim(),
                 type: confType.toString().trim(),
-                flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y'))
+                flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
+                offset: parseInt(confOffset) || 1
             });
         }
     });
 
     if (sheetConfigs.length === 0) {
-        sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false });
-        sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: false });
+        sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false, offset: 1 });
+        sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: false, offset: 1 });
     }
 
     // --- 2. Aggregate Transactions ---
@@ -150,7 +152,7 @@ async function updateFinancials() {
             else if (isCC) pType = 'cc';
             else if (tStr.includes('bank')) pType = 'bank';
 
-            sheet.eachRow((row, r) => { if (r > 1) processLine(row, pType, config.flip); });
+            sheet.eachRow((row, r) => { if (r > config.offset) processLine(row, pType, config.flip); });
         }
     }
 

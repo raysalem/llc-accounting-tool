@@ -36,7 +36,7 @@ A node.js-based suite of tools for managing LLC accounting using Excel as the pr
    node generate_excel.js
    ```
 2. **Configure your accounts**:
-   Open the generated `LLC_Accounting_Template.xlsx`, go to the **Setup** tab, and define your sheet names and polarity preferences.
+   Open the generated `LLC_Accounting_Template.xlsx`, go to the **Setup** tab, and define your sheet names, polarity preferences, and **Header Row** offset (useful if your bank export has extra rows at the top).
 3. **Import Transactions**:
    Use `load_transactions.js` to bring in your bank or CC data.
 4. **Update Financials**:
