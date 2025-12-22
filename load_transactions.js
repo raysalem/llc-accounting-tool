@@ -101,7 +101,7 @@ Example:
                 { header: 'Extended Details', key: 'extended', width: 30 },
                 { header: 'Vendor', key: 'vendor', width: 20 },
                 { header: 'Customer', key: 'customer', width: 20 },
-                { header: 'Account #', key: 'account', width: 15 },
+                { header: 'Account Number', key: 'account', width: 20 },
                 { header: 'Receipt', key: 'receipt', width: 10 },
                 { header: 'Report Type (Auto)', key: 'report_type', width: 15 },
             ];
@@ -152,6 +152,12 @@ Example:
     // Explicitly disable worksheet-level autofilter to avoid conflicts with Table-level filters
     // targetSheet.autoFilter = null; // Removed to prevent corruption
 
+    // --- Global Account Number Detection (Source File) ---
+    // 1. Try Filename
+    let globalAccountNum = '';
+    const filenameMatch = inputFile.match(/[-_ ](\d{4,})[.]/); // e.g., "- 81002."
+    if (filenameMatch) globalAccountNum = filenameMatch[1];
+
     const records = [];
 
     // --- CSV Parsing ---
@@ -163,6 +169,12 @@ Example:
         let isFirstLine = true;
 
         for await (const line of rl) {
+            // Check top lines for Account Number if not found yet
+            if (!globalAccountNum && /account\s*(?:number|#)/i.test(line)) {
+                const match = line.match(/(?:number|#)[:\s]*([\d-]+)/i);
+                if (match) globalAccountNum = match[1];
+            }
+
             const cleanValues = (line.match(/(?:^|,)(\"(?:[^\"]+|\"\")*\"|[^,]*)/g) || []).map(v => {
                 v = v.replace(/^,/, '');
                 if (v.startsWith('"') && v.endsWith('"')) return v.slice(1, -1);
@@ -178,7 +190,6 @@ Example:
             const record = {};
             const dateIdx = headers.indexOf('date');
             const nameIdx = headers.indexOf('name') !== -1 ? headers.indexOf('name') : headers.indexOf('description');
-            // Fallback for description if 'name' not found (common in bank csvs vs quickbooks)
             const memoIdx = headers.indexOf('memo');
             const amtIdx = headers.indexOf('amount');
             const acctIdx = headers.indexOf('account') !== -1 ? headers.indexOf('account') : headers.indexOf('account number');
@@ -186,7 +197,11 @@ Example:
             if (dateIdx !== -1) record.date = cleanValues[dateIdx];
             if (nameIdx !== -1) record.desc = cleanValues[nameIdx];
             if (memoIdx !== -1) record.extended = cleanValues[memoIdx];
-            if (acctIdx !== -1) record.account = cleanValues[acctIdx];
+
+            // Prefer row-level, fallback to global
+            if (acctIdx !== -1 && cleanValues[acctIdx]) record.account = cleanValues[acctIdx];
+            else if (globalAccountNum) record.account = globalAccountNum;
+
             if (amtIdx !== -1) {
                 let amtStr = cleanValues[amtIdx];
                 if (amtStr) amtStr = amtStr.replace(/[$,]/g, '');
@@ -200,6 +215,27 @@ Example:
         const inputWorkbook = new ExcelJS.Workbook();
         await inputWorkbook.xlsx.readFile(inputFile);
         const inputSheet = inputWorkbook.worksheets[0];
+
+        // Scan top rows for "Account Number" label in Source
+        if (!globalAccountNum) {
+            for (let r = 1; r <= 10; r++) {
+                const row = inputSheet.getRow(r);
+                row.eachCell((cell) => {
+                    const val = (cell.value || '').toString();
+                    if (/account\s*(?:number|#)/i.test(val)) {
+                        // Check this cell or next cell for digits
+                        const numMatch = val.match(/(?:number|#)[:\s]*([\d-]+)/i);
+                        if (numMatch) globalAccountNum = numMatch[1];
+                        else {
+                            // Valid next cell?
+                            const nextVal = (row.getCell(cell.col + 1).value || '').toString();
+                            if (/[\d-]+/.test(nextVal)) globalAccountNum = nextVal;
+                        }
+                    }
+                });
+                if (globalAccountNum) break;
+            }
+        }
 
         let colMap = {};
         let headerRowIndex = 1;
@@ -221,7 +257,7 @@ Example:
             colMap = {
                 'date': 1, 'receipt': 2, 'description': 3, 'card member': 4,
                 'account #': 5, 'amount': 6, 'extended details': 7,
-                'account number': 5 // Fallback alias
+                'account number': 5
             };
         }
 
@@ -242,7 +278,7 @@ Example:
                 member: getVal('card member') || getVal('member'),
                 extended: getVal('extended details'),
                 receipt: getVal('receipt'),
-                account: getVal('account') || getVal('account #') || getVal('account number')
+                account: getVal('account') || getVal('account #') || getVal('account number') || globalAccountNum
             };
 
             // Enhanced Junk Filter
@@ -314,6 +350,13 @@ Example:
             pattern: 'solid',
             fgColor: { argb: 'FF4F81BD' } // Standard Excel Blue
         };
+
+        // Display Global Account Number in Top Row (J1) if found
+        if (globalAccountNum && accountType === 'cc') {
+            const acctCell = targetSheet.getCell('J1');
+            acctCell.value = `Acct: ${globalAccountNum}`;
+            acctCell.font = { bold: true, color: { argb: 'FF000000' } };
+        }
 
         // Border Styling for Data
         for (let r = headerRowIdx + 1; r <= finalLastRow; r++) {
