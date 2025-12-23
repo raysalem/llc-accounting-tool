@@ -26,6 +26,29 @@ Bank statements and Credit Card statements often use different polarities (e.g.,
 - **Transaction Tabs**: (e.g., Bank Transactions, Credit Card Transactions) Where imported or manual line items live.
 - **Header Detection**: The tool automatically scans the first 5 rows to identify where your data headers ("Date", "Amount", "Category") begin, skipping summary rows like "Total" or "Balance" that might appear at the top of exports.
 
+## Technical Notes
+
+### Excel "Visual Tables" vs. Formal Tables
+To prevent persistent "Problem with content" (XML corruption) errors often caused by modifying formal Excel Tables (`ListObjects`) programmatically:
+*   This tool now uses **Visual Tables**: It applies standard Blue header styling and **AutoFilters** to the data range.
+*   It does **not** create formal Excel Table objects.
+*   This ensures files remain healthy and open without repair warnings, while still providing sorting/filtering functionality.
+
+### Data Clearing Logic
+*   The `--clear` flag is now a **"Nuclear Option"**.
+*   It **completely deletes** the target worksheet and recreates it from scratch.
+*   This guarantees zero persistence of old data, hidden rows, or stale metadata.
+
+### Account Number Detection
+The tool attempts to auto-detect the account number from:
+1.  **Filename**: Looks for patterns like `...- 81002.xlsx`.
+2.  **File Content**: Scans the top rows of the source file for "Account Number: XXXXX".
+If found, it populates the "Account Number" column for all rows and displays it in the top header row (Cell J1).
+
+### Layout Changes
+*   **Top Totals**: Transaction sheets now feature `TOTAL` (Sum) and `SUBTOTAL` (Filtered Sum) rows at the very top (Rows 1 & 2) for immediate visibility.
+*   **Header Row**: The main data header now starts at **Row 3**.
+
 ### 2a. How to Use the Ledger
 The **Ledger** tab is for manual double-entry accounting. It directly impacts your calculated Balance Sheet totals.
 
