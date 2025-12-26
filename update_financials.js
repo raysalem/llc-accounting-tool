@@ -3,7 +3,7 @@ const fs = require('fs');
 
 async function updateFinancials() {
     const args = process.argv.slice(2);
-    const printOnly = args.includes('--print-only');
+    const saveFlag = args.includes('--save');
     const showPL = args.includes('--pl');
     const showBS = args.includes('--bs');
     const showVendor = args.includes('--vendor');
@@ -25,7 +25,8 @@ Arguments:
 
 Flags:
   --help          Show this help message.
-  --print-only    Calculate and print the report to the console WITHOUT saving changes to the Excel file.
+  --save          Save changes to the Excel file (Summary tab and formatting).
+                  (Default behavior is PRINT ONLY, which does not modify the file).
   --pl            Print the Profit & Loss statement to the console.
   --bs            Print the Balance Sheet to the console.
   --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
@@ -34,13 +35,13 @@ Flags:
   --customer      (Optional) Print income statistics by Customer.
 
 Example:
-  node update_financials.js "My_Books_2025.xlsx" --print-only --pl --checker
+  node update_financials.js "My_Books_2025.xlsx" --pl --checker --save
         `);
         return;
     }
 
     const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker;
-    const showAll = printOnly && !specificFilter;
+    const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
     if (!fs.existsSync(filename)) {
@@ -50,7 +51,7 @@ Example:
 
     const workbook = new ExcelJS.Workbook();
     try {
-        if (showChecker) console.log(`Loading workbook: ${filename}...`);
+        if (showChecker || saveFlag) console.log(`Loading workbook: ${filename}...`);
         await workbook.xlsx.readFile(filename);
     } catch (e) {
         console.error(`Error reading file: ${e.message}`);
@@ -324,6 +325,10 @@ Example:
 
     reports.bs = [{ label: '** Bank Balance (Calculated)', value: bankTotal }, { label: '** CC Balance (Calculated)', value: ccTotal }];
 
+    // Prepare Vendor / Customer Reports
+    reports.vendors = Object.keys(vendorStats).map(v => ({ label: v, value: vendorStats[v] })).sort((a, b) => b.value - a.value);
+    reports.customers = Object.keys(customerStats).map(c => ({ label: c, value: customerStats[c] })).sort((a, b) => b.value - a.value);
+
     // --- 5. Console Output ---
     function printSection(title, rows) {
         console.log(`\n--- ${title} ---`);
@@ -334,6 +339,8 @@ Example:
 
     if (showAll || showPL) { printSection('PROFIT & LOSS', reports.pl); console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`); }
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
+    if (showAll || showVendor) printSection('VENDOR SPENDING', reports.vendors);
+    if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
 
     const hasIssues = uncategorizedDetails.length > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0;
     if (hasIssues) {
@@ -369,7 +376,10 @@ Example:
         offsetWarnings.forEach(w => console.log(`[!] Sheet "${w.sheet}" Row ${w.row} looks like a header (Found: ${w.matches.join(', ')}). Adjust Setup tab offset.`));
     }
 
-    if (printOnly) return;
+    if (!saveFlag) {
+        console.log('\n(Run with --save to update the Excel file)');
+        return;
+    }
 
     // --- 6. Summary Sheet Update ---
     if (!summarySheet) {
@@ -423,7 +433,7 @@ Example:
 
     try {
         await workbook.xlsx.writeFile(filename);
-        if (showChecker) console.log(`\nSuccessfully updated financials in ${filename}`);
+        if (showChecker || saveFlag) console.log(`\nSuccessfully updated financials in ${filename}`);
     } catch (e) {
         console.error('Error saving file:', e.message);
     }
