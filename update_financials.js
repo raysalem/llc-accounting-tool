@@ -257,13 +257,35 @@ Example:
     }
 
     // --- 3. Process Ledger ---
+    // Dynamic Mapping for Ledger
+    const ledgerMap = { date: 1, desc: 2, category: 3, subCat: 4, vendor: 5, customer: 6, dr: 7, cr: 8 };
+    const ledgerHeader = ledgerSheet.getRow(1);
+    ledgerHeader.eachCell((cell, colNumber) => {
+        const val = getVal(cell).toString().toLowerCase();
+        if (val === 'date') ledgerMap.date = colNumber;
+        else if (val === 'description' || val === 'desc') ledgerMap.desc = colNumber;
+        else if (val === 'category' || val === 'cat') ledgerMap.category = colNumber;
+        else if (val === 'sub-category' || val === 'subcat') ledgerMap.subCat = colNumber;
+        else if (val === 'vendor' || val === 'vend') ledgerMap.vendor = colNumber;
+        else if (val === 'customer' || val === 'cust') ledgerMap.customer = colNumber;
+        else if (val === 'debit' || val === 'dr') ledgerMap.dr = colNumber;
+        else if (val === 'credit' || val === 'cr') ledgerMap.cr = colNumber;
+    });
+
+    if (showChecker) {
+        console.log(`\nProcessing "Ledger":`);
+        console.log(`  Mapping: ${JSON.stringify(ledgerMap)}`);
+    }
+
     ledgerSheet.eachRow((row, r) => {
         if (r === 1) return;
-        const rawDate = getVal(row.getCell(1));
-        const rawDesc = getVal(row.getCell(2));
-        const cat = getVal(row.getCell(3));
-        const dr = parseFloat(getVal(row.getCell(4))) || 0;
-        const cr = parseFloat(getVal(row.getCell(5))) || 0;
+        const rawDate = getVal(row.getCell(ledgerMap.date));
+        const rawDesc = getVal(row.getCell(ledgerMap.desc));
+        const cat = getVal(row.getCell(ledgerMap.category));
+        const dr = parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0;
+        const cr = parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0;
+        const vendorVal = getVal(row.getCell(ledgerMap.vendor));
+        const customerVal = getVal(row.getCell(ledgerMap.customer));
 
         // Skip truly empty rows or rows without dates (user requirement)
         if (!rawDate && !cat && !rawDesc && !dr && !cr) return;
@@ -285,6 +307,20 @@ Example:
             const impact = (conf && conf.report === 'P&L') ? (cr - dr) : (dr - cr);
             if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
             catStats[catStr].total += impact;
+
+            // Vendor / Customer Stats from Ledger
+            if (vendorVal) {
+                const vStr = vendorVal.toString().trim();
+                if (!validVendors.has(vStr)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
+                // Vendor: Net Debit (Expense)
+                vendorStats[vStr] = (vendorStats[vStr] || 0) + (dr - cr);
+            }
+            if (customerVal) {
+                const cStr = customerVal.toString().trim();
+                if (!validCustomers.has(cStr)) illegalCustomers.push({ value: cStr, sheet: 'Ledger', row: r, date: displayDate });
+                // Customer: Net Credit (Income)
+                customerStats[cStr] = (customerStats[cStr] || 0) + (cr - dr);
+            }
 
             // Integration: Update calculated bank/cc balances from Ledger entries
             const targetAccountType = conf ? (conf.accountType || '').toLowerCase() : '';
