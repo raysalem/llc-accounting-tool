@@ -68,10 +68,10 @@ Example:
     }
 
     // --- State ---
-    const validCategories = new Set();
-    const validVendors = new Set();
-    const validCustomers = new Set();
-    const uniqueCategories = new Map();
+    const validCategories = new Set(); // Stores lowercase for validation
+    const validVendors = new Map();    // Maps lower -> Display Name
+    const validCustomers = new Map();  // Maps lower -> Display Name
+    const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
     const sheetConfigs = [];
 
     const catStats = {};
@@ -114,13 +114,20 @@ Example:
         const report = getVal(row.getCell(4));
         if (catName) {
             const trimmed = catName.toString().trim();
-            validCategories.add(trimmed);
-            uniqueCategories.set(trimmed, { report, accountType });
+            const lower = trimmed.toLowerCase();
+            validCategories.add(lower);
+            uniqueCategories.set(lower, { report, accountType, displayName: trimmed });
         }
         const vendor = getVal(row.getCell(6));
-        if (vendor) validVendors.add(vendor.toString().trim());
+        if (vendor) {
+            const vRaw = vendor.toString().trim();
+            validVendors.set(vRaw.toLowerCase(), vRaw);
+        }
         const customer = getVal(row.getCell(7));
-        if (customer) validCustomers.add(customer.toString().trim());
+        if (customer) {
+            const cRaw = customer.toString().trim();
+            validCustomers.set(cRaw.toLowerCase(), cRaw);
+        }
 
         const confSheetName = getVal(row.getCell(9));
         const confType = getVal(row.getCell(10));
@@ -234,24 +241,37 @@ Example:
                 uncategorizedDetails.push({ sheet: sheet.name, row: r, date: displayDate, desc: rawDesc });
             } else if (categoryVal) {
                 const catStr = categoryVal.toString().trim();
-                if (!validCategories.has(catStr)) {
+                const catLower = catStr.toLowerCase();
+
+                if (!validCategories.has(catLower)) {
                     illegalCategories.push({ value: catStr, sheet: sheet.name, row: r, date: displayDate });
                 }
-                if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
-                catStats[catStr].total += amount;
+
+                // Use Display Name for stats if available, else usage case
+                const displayCat = uniqueCategories.get(catLower)?.displayName || catStr;
+
+                if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {} };
+                catStats[displayCat].total += amount;
+
                 const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
-                catStats[catStr].subCats[sName] = (catStats[catStr].subCats[sName] || 0) + amount;
+                catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
             }
 
             if (vendorVal) {
                 const vStr = vendorVal.toString().trim();
-                if (!validVendors.has(vStr)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
-                vendorStats[vStr] = (vendorStats[vStr] || 0) + amount;
+                const vLower = vStr.toLowerCase();
+                if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
+
+                const displayVendor = validVendors.get(vLower) || vStr;
+                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + amount;
             }
             if (customerVal) {
                 const cStr = customerVal.toString().trim();
-                if (!validCustomers.has(cStr)) illegalCustomers.push({ value: cStr, sheet: sheet.name, row: r, date: displayDate });
-                customerStats[cStr] = (customerStats[cStr] || 0) + amount;
+                const cLower = cStr.toLowerCase();
+                if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: sheet.name, row: r, date: displayDate });
+
+                const displayCustomer = validCustomers.get(cLower) || cStr;
+                customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + amount;
             }
         });
     }
@@ -282,6 +302,10 @@ Example:
         const rawDate = getVal(row.getCell(ledgerMap.date));
         const rawDesc = getVal(row.getCell(ledgerMap.desc));
         const cat = getVal(row.getCell(ledgerMap.category));
+
+        // Ledger SubCat support
+        const subCatVal = getVal(row.getCell(ledgerMap.subCat));
+
         const dr = parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0;
         const cr = parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0;
         const vendorVal = getVal(row.getCell(ledgerMap.vendor));
@@ -299,27 +323,41 @@ Example:
 
         if (cat) {
             const catStr = cat.toString().trim();
+            const catLower = catStr.toLowerCase();
             const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
 
-            if (!validCategories.has(catStr)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
+            if (!validCategories.has(catLower)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
 
-            const conf = uniqueCategories.get(catStr);
+            const conf = uniqueCategories.get(catLower);
             const impact = (conf && conf.report === 'P&L') ? (cr - dr) : (dr - cr);
-            if (!catStats[catStr]) catStats[catStr] = { total: 0, subCats: {} };
-            catStats[catStr].total += impact;
+
+            const displayCat = conf?.displayName || catStr;
+
+            if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {} };
+            catStats[displayCat].total += impact;
+
+            // Ledger SubCat aggregation
+            const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+            catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + impact;
 
             // Vendor / Customer Stats from Ledger
             if (vendorVal) {
                 const vStr = vendorVal.toString().trim();
-                if (!validVendors.has(vStr)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
+                const vLower = vStr.toLowerCase();
+                if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
+
+                const displayVendor = validVendors.get(vLower) || vStr;
                 // Vendor: Net Debit (Expense)
-                vendorStats[vStr] = (vendorStats[vStr] || 0) + (dr - cr);
+                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + (dr - cr);
             }
             if (customerVal) {
                 const cStr = customerVal.toString().trim();
-                if (!validCustomers.has(cStr)) illegalCustomers.push({ value: cStr, sheet: 'Ledger', row: r, date: displayDate });
+                const cLower = cStr.toLowerCase();
+                if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: 'Ledger', row: r, date: displayDate });
+
+                const displayCustomer = validCustomers.get(cLower) || cStr;
                 // Customer: Net Credit (Income)
-                customerStats[cStr] = (customerStats[cStr] || 0) + (cr - dr);
+                customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + (cr - dr);
             }
 
             // Integration: Update calculated bank/cc balances from Ledger entries
@@ -327,7 +365,7 @@ Example:
             const matchingConfig = sheetConfigs.find(s => {
                 const sName = s.name.toLowerCase();
                 const sType = s.type.toLowerCase();
-                const cName = catStr.toLowerCase();
+                const cName = catLower; // Compare lower
 
                 return sName === cName ||
                     sType === cName ||
@@ -337,17 +375,11 @@ Example:
 
             if (matchingConfig) {
                 const isMatchingCC = matchingConfig.type.toLowerCase().includes('cc') || matchingConfig.type.toLowerCase().includes('credit');
-                // Standard Asset: Dr increases (+), Cr decreases (-)
-                // Standard Liability (CC): Dr decreases liability (payment), Cr increases liability (purchase).
-                // However, since we track CC balance as negative for debt, we use the same (dr - cr) logic:
-                // Payment (Dr 100) -> +100 to balance (reduces debt from -500 to -400).
-                // Purchase (Cr 100) -> -100 to balance (increases debt from -500 to -600).
-                const impact = (dr - cr);
-
-                if (isMatchingCC) ccTotal += impact; else bankTotal += impact;
+                const impactBalance = (dr - cr);
+                if (isMatchingCC) ccTotal += impactBalance; else bankTotal += impactBalance;
 
                 if (showChecker) {
-                    console.log(`Ledger Row ${r} [${displayDate}]: Applied ${impact} (Dr:${dr} - Cr:${cr}) to "${matchingConfig.name}".`);
+                    console.log(`Ledger Row ${r} [${displayDate}]: Applied ${impactBalance} (Dr:${dr} - Cr:${cr}) to "${matchingConfig.name}".`);
                 }
             }
         }
@@ -355,7 +387,12 @@ Example:
 
     // --- 4. Prepare Reports ---
     const reports = { pl: [], bs: [] };
-    const pnlNames = Array.from(uniqueCategories.keys()).filter(n => uniqueCategories.get(n).report === 'P&L').sort();
+    // Filter by P&L report type using the Map values
+    const pnlNames = Array.from(uniqueCategories.values())
+        .filter(conf => conf.report === 'P&L')
+        .map(conf => conf.displayName)
+        .sort();
+
     reports.pl = pnlNames.map(n => ({ label: n, value: catStats[n] ? catStats[n].total : 0 }));
     const netIncome = reports.pl.reduce((a, b) => a + b.value, 0);
 
@@ -373,7 +410,26 @@ Example:
         rows.forEach(r => console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`));
     }
 
-    if (showAll || showPL) { printSection('PROFIT & LOSS', reports.pl); console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`); }
+    if (showAll || showPL) {
+        console.log(`\n--- PROFIT & LOSS ---`);
+        if (!reports.pl.length) console.log('(No Data)');
+        else {
+            const max = Math.max(...reports.pl.map(r => r.label.length), 10);
+            reports.pl.forEach(r => {
+                console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                // Sub-Category Detail
+                if (showPLSub && catStats[r.label] && catStats[r.label].subCats) {
+                    const subs = catStats[r.label].subCats;
+                    Object.keys(subs).sort().forEach(sub => {
+                        if (Math.abs(subs[sub]) > 0.01) {
+                            console.log(`   > ${sub.padEnd(max + 1)} : ${subs[sub].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                        }
+                    });
+                }
+            });
+        }
+        console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`);
+    }
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
     if (showAll || showVendor) printSection('VENDOR SPENDING', reports.vendors);
     if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
