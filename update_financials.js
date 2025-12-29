@@ -106,54 +106,128 @@ Example:
         return (v === null || v === undefined) ? '' : v.toString().trim();
     }
 
+    function getHeaderMap(sheet, rowIdx = 1) {
+        const map = new Map();
+        const row = sheet.getRow(rowIdx);
+        row.eachCell((cell, colNumber) => {
+            const val = getVal(cell).toString().trim().toLowerCase();
+            map.set(val, colNumber);
+        });
+        return map;
+    }
+
     // --- 1. Read Setup ---
+    const setupHeaders = getHeaderMap(setupSheet, 1);
+
+    // Column Name Mapping (Dynamic)
+    const colCategory = setupHeaders.get('category');
+    const colSubCategory = setupHeaders.get('sub-category') || setupHeaders.get('subcategory');
+    const colType = setupHeaders.get('type');
+    const colReport = setupHeaders.get('report');
+    const colVendor = setupHeaders.get('vendors') || setupHeaders.get('vendor');
+    const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
+
+    const colSheetName = setupHeaders.get('sheet name (config)') || setupHeaders.get('sheet name');
+    const colSheetType = setupHeaders.get('account type') || setupHeaders.get('sheet type');
+    // In generate_excel.js: 
+    // Col 1: Category
+    // Col 2: Sub-Category
+    // Col 3: Type
+    // Col 4: Report
+    // Col 9: Sheet Name (Config)
+    // Col 10: Account Type
+
+    // Let's rely on map. If map fails, fallbacks are risky but kept for backward compat.
+
+    const colFlip = setupHeaders.get('flip polarity? (yes/no)') || setupHeaders.get('flip polarity?') || setupHeaders.get('flip');
+    const colOffset = setupHeaders.get('header row') || setupHeaders.get('offset');
+
     setupSheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
-        const catName = getVal(row.getCell(1));
-        const accountType = getVal(row.getCell(2)); // Account Type column
-        const report = getVal(row.getCell(4));
+        const catName = getVal(row.getCell(colCategory));
+        const accountType = getVal(row.getCell(colSubCategory)); // Wait, old code mapped Col 2 to "Account Type"? 
+        // Checking old code: "const accountType = getVal(row.getCell(2)); // Account Type column"
+        // But in generate_excel.js, Col 2 is 'Sub-Category'. Col 3 is 'Type'. 
+        // This suggests a potential bug in original code or naming confusion.
+        // Original code: "const accountType = getVal(row.getCell(2));"
+        // generate_excel: "{ header: 'Sub-Category', key: 'subcategory', width: 25 },"
+        // If the user meant "Type" (Asset/Liability/Income/Expense), that is Col 3.
+        // Let's assume Col 2 was effectively unused or misused as Type? 
+        // Actually, looking at uniqueCategories.set: 
+        // uniqueCategories.set(lower, { report, accountType, displayName: trimmed });
+        // The 'accountType' is used later for matching logic. 
+        // In generate_excel.js, Col 3 is 'Type' (Asset etc), Col 2 is Sub-Cat. 
+        // I will map 'accountType' to the 'Type' column (Col 3) correctly now.
+
+        const typeVal = getVal(row.getCell(colType));
+        const report = getVal(row.getCell(colReport));
+
         if (catName) {
             const trimmed = catName.toString().trim();
             const lower = trimmed.toLowerCase();
             validCategories.add(lower);
-            uniqueCategories.set(lower, { report, accountType, displayName: trimmed });
+            uniqueCategories.set(lower, { report, accountType: typeVal, displayName: trimmed });
         }
-        const vendor = getVal(row.getCell(6));
+
+        const vendor = getVal(row.getCell(colVendor));
         if (vendor) {
             const vRaw = vendor.toString().trim();
             validVendors.set(vRaw.toLowerCase(), vRaw);
         }
-        const customer = getVal(row.getCell(7));
+        const customer = getVal(row.getCell(colCustomer));
         if (customer) {
             const cRaw = customer.toString().trim();
             validCustomers.set(cRaw.toLowerCase(), cRaw);
         }
 
-        const confSheetName = getVal(row.getCell(9));
-        const confType = getVal(row.getCell(10));
-        const confFlip = getVal(row.getCell(11));
-        const confOffset = getVal(row.getCell(12));
+        const confSheetName = getVal(row.getCell(colSheetName));
+        const confType = getVal(row.getCell(colSheetType));
+        const confFlip = getVal(row.getCell(colFlip));
+        const confOffset = getVal(row.getCell(colOffset));
 
         if (confSheetName && confType) {
             sheetConfigs.push({
                 name: confSheetName.toString().trim(),
                 type: confType.toString().trim(),
                 flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
-                offset: parseInt(confOffset) || 0
+                offset: parseInt(confOffset) || 0,
+                // The Category Name (Column 1) is the GL Account this sheet represents
+                linkedAccount: catName ? catName.toString().trim() : null
             });
         }
     });
 
     if (sheetConfigs.length === 0) {
-        sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false, offset: 1 });
-        sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: true, offset: 1 });
+        sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false, offset: 1, linkedAccount: null });
+        sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: true, offset: 1, linkedAccount: null });
     }
 
     // --- 2. Process Transaction Sheets ---
-    const bankMapDefault = { date: 1, desc: 2, amount: 3, category: 4, subCat: 5, vendor: 7, customer: 8 };
-    const ccMapDefault = { date: 1, desc: 3, amount: 4, category: 5, subCat: 6, vendor: 8, customer: 9 };
+    // --- Constants for Column Headers ---
+    const HEADERS = {
+        DATE: ['date', 'txn date', 'transaction date'],
+        DESC: ['description', 'desc', 'payee', 'merchant', 'name'],
+        AMOUNT: ['amount', 'amt', 'value'],
+        CATEGORY: ['category', 'cat', 'account_category'],
+        SUBCAT: ['sub-category', 'sub-cat', 'subcategory', 'subcat'],
+        VENDOR: ['vendor', 'vend', 'merchant name'],
+        CUSTOMER: ['customer', 'cust', 'client'],
+        DEBIT: ['debit', 'dr', 'withdrawal'],
+        CREDIT: ['credit', 'cr', 'deposit']
+    };
+
+    // --- 2. Process Transaction Sheets ---
+    const bankMapDefault = { date: null, desc: null, amount: null, category: null, subCat: null, vendor: null, customer: null };
+    const ccMapDefault = { date: null, desc: null, amount: null, category: null, subCat: null, vendor: null, customer: null };
+
+    function findCol(cellVal, headerList) {
+        if (!cellVal) return false;
+        const v = cellVal.toString().toLowerCase().trim();
+        return headerList.some(h => v === h || v.includes(h)); // Relaxed matching
+    }
 
     for (const config of sheetConfigs) {
+        let sheetTotal = 0;
         let sheet = workbook.getWorksheet(config.name);
         if (!sheet) {
             sheet = workbook.worksheets.find(s => s.name.trim().toLowerCase() === config.name.trim().toLowerCase());
@@ -170,33 +244,37 @@ Example:
         // Dynamic Map detection
         let headerRowIndex = config.offset || 1;
 
-        // Smarter scan: Check rows 1-5 for actual header signature to handle shifted layouts (e.g. Total rows at top)
+        // Smarter scan: Check rows 1-5 for actual header signature
         for (let r = 1; r <= 5; r++) {
             const rowVals = sheet.getRow(r).values;
             if (Array.isArray(rowVals)) {
-                // exceljs values are 1-indexed (index 0 is null/undefined usually), simplify join
+                // Check if row contains major headers
                 const rowStr = rowVals.map(v => v ? v.toString().toLowerCase() : '').join(' ');
-                if (rowStr.includes('date') && (rowStr.includes('amount') || rowStr.includes('category'))) {
+                if (HEAD_MATCH(rowStr)) {
                     headerRowIndex = r;
-                    // crucial: update the config offset so we skip rows before this
                     config.offset = r;
                     break;
                 }
             }
         }
 
+        function HEAD_MATCH(rowStr) {
+            return (rowStr.includes('date') && (rowStr.includes('amount') || rowStr.includes('category')));
+        }
+
         const headerRow = sheet.getRow(headerRowIndex);
         const map = isCC ? { ...ccMapDefault } : { ...bankMapDefault };
 
         headerRow.eachCell((cell, colNumber) => {
-            const val = getVal(cell).toString().toLowerCase();
-            if (val === 'date') map.date = colNumber;
-            else if (val === 'description' || val === 'desc') map.desc = colNumber;
-            else if (val === 'amount') map.amount = colNumber;
-            else if (val === 'sub-category' || val === 'subcat') map.subCat = colNumber;
-            else if (val === 'category' || val === 'cat') map.category = colNumber;
-            else if (val === 'vendor' || val === 'vend') map.vendor = colNumber;
-            else if (val === 'customer' || val === 'cust') map.customer = colNumber;
+            const val = getVal(cell);
+
+            if (findCol(val, HEADERS.DATE)) map.date = colNumber;
+            else if (findCol(val, HEADERS.DESC)) map.desc = colNumber;
+            else if (findCol(val, HEADERS.AMOUNT)) map.amount = colNumber;
+            else if (findCol(val, HEADERS.SUBCAT)) map.subCat = colNumber; // Check subcat before cat to avoid partial match if 'category' in 'sub-category'
+            else if (findCol(val, HEADERS.CATEGORY)) map.category = colNumber;
+            else if (findCol(val, HEADERS.VENDOR)) map.vendor = colNumber;
+            else if (findCol(val, HEADERS.CUSTOMER)) map.customer = colNumber;
         });
 
         if (showChecker) {
@@ -208,22 +286,21 @@ Example:
         sheet.eachRow((row, r) => {
             if (r <= config.offset) return;
 
-            const vendorVal = getVal(row.getCell(map.vendor));
-            const customerVal = getVal(row.getCell(map.customer));
-            const categoryVal = getVal(row.getCell(map.category));
-            const subCatVal = getVal(row.getCell(map.subCat));
-            let amount = getVal(row.getCell(map.amount));
+            const vendorVal = map.vendor ? getVal(row.getCell(map.vendor)) : '';
+            const customerVal = map.customer ? getVal(row.getCell(map.customer)) : '';
+            const categoryVal = map.category ? getVal(row.getCell(map.category)) : '';
+            const subCatVal = map.subCat ? getVal(row.getCell(map.subCat)) : '';
+            let amount = map.amount ? getVal(row.getCell(map.amount)) : 0;
             if (typeof amount !== 'number') amount = parseFloat(amount) || 0;
 
-            const rawDate = getVal(row.getCell(map.date));
-            const rawDesc = getVal(row.getCell(map.desc)).toString().toLowerCase();
+            const rawDate = map.date ? getVal(row.getCell(map.date)) : '';
+            const rawDesc = map.desc ? getVal(row.getCell(map.desc)).toString().toLowerCase() : '';
 
             // Offset check
             if (r === config.offset + 1) {
                 const rowValues = row.values.map(v => (v ? v.toString().toLowerCase() : ''));
-                const matches = ['date', 'amount', 'category', 'description'].filter(t => rowValues.some(rv => rv.includes(t)));
-                if (matches.length >= 3) {
-                    offsetWarnings.push({ sheet: sheet.name, row: r, matches });
+                if (HEAD_MATCH(rowValues.join(' '))) {
+                    offsetWarnings.push({ sheet: sheet.name, row: r, matches: ['Header Signature Detected'] });
                 }
             }
 
@@ -232,7 +309,10 @@ Example:
             if (!rawDate) return;
 
             if (config.flip) amount *= -1;
-            if (pType === 'cc') ccTotal += amount; else bankTotal += amount;
+
+            // Accumulate Sheet Total (Net Flow)
+            sheetTotal += amount;
+            if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
 
             const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
 
@@ -274,23 +354,44 @@ Example:
                 customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + amount;
             }
         });
+
+        // Apply Accumulated Sheet Total to Linked Account (if defined)
+        if (config.linkedAccount) {
+            const linkName = config.linkedAccount;
+            const conf = uniqueCategories.get(linkName.toLowerCase());
+            // Account Logic: 
+            // Assets (Bank): Dr (Normal). Net Flow (Inc-Exp). Increase = Dr.
+            // catStats storage: Dr is Negative.
+            // Flow: Income (+), Expense (-).
+            // +100 (Inc) -> Debit Bank -> Stats should decrease (more negative).
+            if (!catStats[linkName]) catStats[linkName] = { total: 0, subCats: {} };
+            catStats[linkName].total -= sheetTotal;
+
+            if (showChecker) {
+                console.log(`Applied Sheet Total (${sheetTotal}) to Linked Account "${linkName}". New Balance: ${catStats[linkName].total}`);
+            }
+        }
     }
 
     // --- 3. Process Ledger ---
     // Dynamic Mapping for Ledger
-    const ledgerMap = { date: 1, desc: 2, category: 3, subCat: 4, vendor: 5, customer: 6, dr: 7, cr: 8 };
+    const ledgerMap = { date: null, desc: null, category: null, subCat: null, vendor: null, customer: null, dr: null, cr: null };
     const ledgerHeader = ledgerSheet.getRow(1);
+
     ledgerHeader.eachCell((cell, colNumber) => {
-        const val = getVal(cell).toString().toLowerCase();
-        if (val === 'date') ledgerMap.date = colNumber;
-        else if (val === 'description' || val === 'desc') ledgerMap.desc = colNumber;
-        else if (val === 'category' || val === 'cat') ledgerMap.category = colNumber;
-        else if (val === 'sub-category' || val === 'subcat') ledgerMap.subCat = colNumber;
-        else if (val === 'vendor' || val === 'vend') ledgerMap.vendor = colNumber;
-        else if (val === 'customer' || val === 'cust') ledgerMap.customer = colNumber;
-        else if (val === 'debit' || val === 'dr') ledgerMap.dr = colNumber;
-        else if (val === 'credit' || val === 'cr') ledgerMap.cr = colNumber;
+        const val = getVal(cell);
+
+        if (findCol(val, HEADERS.DATE)) ledgerMap.date = colNumber;
+        else if (findCol(val, HEADERS.DESC)) ledgerMap.desc = colNumber;
+        else if (findCol(val, HEADERS.SUBCAT)) ledgerMap.subCat = colNumber;
+        else if (findCol(val, HEADERS.CATEGORY)) ledgerMap.category = colNumber;
+        else if (findCol(val, HEADERS.VENDOR)) ledgerMap.vendor = colNumber;
+        else if (findCol(val, HEADERS.CUSTOMER)) ledgerMap.customer = colNumber;
+        else if (findCol(val, HEADERS.DEBIT)) ledgerMap.dr = colNumber;
+        else if (findCol(val, HEADERS.CREDIT)) ledgerMap.cr = colNumber;
     });
+
+    // No default fallbacks - strict header matching required.
 
     if (showChecker) {
         console.log(`\nProcessing "Ledger":`);
@@ -299,17 +400,17 @@ Example:
 
     ledgerSheet.eachRow((row, r) => {
         if (r === 1) return;
-        const rawDate = getVal(row.getCell(ledgerMap.date));
-        const rawDesc = getVal(row.getCell(ledgerMap.desc));
-        const cat = getVal(row.getCell(ledgerMap.category));
+        const rawDate = ledgerMap.date ? getVal(row.getCell(ledgerMap.date)) : '';
+        const rawDesc = ledgerMap.desc ? getVal(row.getCell(ledgerMap.desc)) : '';
+        const cat = ledgerMap.category ? getVal(row.getCell(ledgerMap.category)) : '';
 
         // Ledger SubCat support
-        const subCatVal = getVal(row.getCell(ledgerMap.subCat));
+        const subCatVal = ledgerMap.subCat ? getVal(row.getCell(ledgerMap.subCat)) : '';
 
-        const dr = parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0;
-        const cr = parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0;
-        const vendorVal = getVal(row.getCell(ledgerMap.vendor));
-        const customerVal = getVal(row.getCell(ledgerMap.customer));
+        const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
+        const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
+        const vendorVal = ledgerMap.vendor ? getVal(row.getCell(ledgerMap.vendor)) : '';
+        const customerVal = ledgerMap.customer ? getVal(row.getCell(ledgerMap.customer)) : '';
 
         // Skip truly empty rows or rows without dates (user requirement)
         if (!rawDate && !cat && !rawDesc && !dr && !cr) return;
@@ -329,7 +430,12 @@ Example:
             if (!validCategories.has(catLower)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
 
             const conf = uniqueCategories.get(catLower);
-            const impact = (conf && conf.report === 'P&L') ? (cr - dr) : (dr - cr);
+
+            // Default to P&L logic if report type isn't explicit, but check valid config first
+            // Standardize: Credit positive (+), Debit negative (-)
+            // P&L: Income (+), Expense (-)
+            // BS: Liability (+), Equity (+), Asset (-)
+            const impact = (cr - dr);
 
             const displayCat = conf?.displayName || catStr;
 
@@ -360,28 +466,7 @@ Example:
                 customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + (cr - dr);
             }
 
-            // Integration: Update calculated bank/cc balances from Ledger entries
-            const targetAccountType = conf ? (conf.accountType || '').toLowerCase() : '';
-            const matchingConfig = sheetConfigs.find(s => {
-                const sName = s.name.toLowerCase();
-                const sType = s.type.toLowerCase();
-                const cName = catLower; // Compare lower
-
-                return sName === cName ||
-                    sType === cName ||
-                    (targetAccountType && sType === targetAccountType) ||
-                    (targetAccountType && sName === targetAccountType);
-            });
-
-            if (matchingConfig) {
-                const isMatchingCC = matchingConfig.type.toLowerCase().includes('cc') || matchingConfig.type.toLowerCase().includes('credit');
-                const impactBalance = (dr - cr);
-                if (isMatchingCC) ccTotal += impactBalance; else bankTotal += impactBalance;
-
-                if (showChecker) {
-                    console.log(`Ledger Row ${r} [${displayDate}]: Applied ${impactBalance} (Dr:${dr} - Cr:${cr}) to "${matchingConfig.name}".`);
-                }
-            }
+            // (Integration block removed - handled via standard catStats logic)
         }
     });
 
@@ -396,7 +481,25 @@ Example:
     reports.pl = pnlNames.map(n => ({ label: n, value: catStats[n] ? catStats[n].total : 0 }));
     const netIncome = reports.pl.reduce((a, b) => a + b.value, 0);
 
-    reports.bs = [{ label: '** Bank Balance (Calculated)', value: bankTotal }, { label: '** CC Balance (Calculated)', value: ccTotal }];
+    // Balance Sheet Items
+    const bsNames = Array.from(uniqueCategories.values())
+        .filter(conf => conf.report === 'Balance Sheet')
+        .map(conf => conf.displayName)
+        .sort();
+
+    const bsItems = bsNames.map(n => {
+        let val = catStats[n] ? catStats[n].total : 0;
+        // Flip sign for Assets so they display positively (if Dr > Cr)
+        const conf = uniqueCategories.get(n.toLowerCase());
+        if (conf && conf.accountType && conf.accountType.toLowerCase().includes('asset')) {
+            val *= -1;
+        }
+        return { label: n, value: val };
+    });
+
+    reports.bs = [
+        ...bsItems
+    ];
 
     // Prepare Vendor / Customer Reports
     reports.vendors = Object.keys(vendorStats).map(v => ({ label: v, value: vendorStats[v] })).sort((a, b) => b.value - a.value);
@@ -410,7 +513,7 @@ Example:
         rows.forEach(r => console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`));
     }
 
-    if (showAll || showPL) {
+    if (showAll || showPL || showPLSub) {
         console.log(`\n--- PROFIT & LOSS ---`);
         if (!reports.pl.length) console.log('(No Data)');
         else {
@@ -420,11 +523,12 @@ Example:
                 // Sub-Category Detail
                 if (showPLSub && catStats[r.label] && catStats[r.label].subCats) {
                     const subs = catStats[r.label].subCats;
-                    Object.keys(subs).sort().forEach(sub => {
-                        if (Math.abs(subs[sub]) > 0.01) {
+                    const subKeys = Object.keys(subs).filter(k => Math.abs(subs[k]) > 0.01);
+                    if (!(subKeys.length === 1 && subKeys[0] === '(No Sub-Cat)')) {
+                        subKeys.sort().forEach(sub => {
                             console.log(`   > ${sub.padEnd(max + 1)} : ${subs[sub].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
-                        }
-                    });
+                        });
+                    }
                 }
             });
         }

@@ -237,13 +237,37 @@ Example:
             }
         }
 
+        // --- Constants for Column Headers ---
+        // (Shared logic with update_financials for consistency)
+        const HEADERS = {
+            DATE: ['date', 'txn date', 'transaction date'],
+            DESC: ['description', 'desc', 'payee', 'merchant', 'name'],
+            AMOUNT: ['amount', 'amt', 'value'],
+            ACCOUNT: ['account', 'account #', 'account number'],
+            MEMBER: ['card member', 'member'],
+            EXTENDED: ['extended details', 'memo', 'extended'],
+            RECEIPT: ['receipt']
+        };
+
+        const findCol = (cellVal, headerList) => {
+            if (!cellVal) return false;
+            const v = cellVal.toString().toLowerCase().trim();
+            return headerList.some(h => v === h || v.includes(h));
+        };
+
         let colMap = {};
         let headerRowIndex = 1;
 
         inputSheet.eachRow((row, rowNumber) => {
             if (Object.keys(colMap).length > 0) return;
             const values = (row.values || []).map(v => v ? v.toString().trim().toLowerCase() : '');
-            if (values.includes('date') && (values.includes('amount') || values.includes('description'))) {
+
+            // Robust Header Detection
+            const hasDate = values.some(v => findCol(v, HEADERS.DATE));
+            const hasAmount = values.some(v => findCol(v, HEADERS.AMOUNT));
+            const hasDesc = values.some(v => findCol(v, HEADERS.DESC));
+
+            if (hasDate && (hasAmount || hasDesc)) {
                 headerRowIndex = rowNumber;
                 row.eachCell((cell, colNumber) => {
                     const v = cell.value ? cell.value.toString().trim().toLowerCase() : '';
@@ -252,33 +276,40 @@ Example:
             }
         });
 
-        if (Object.keys(colMap).length === 0 && accountType === 'cc') {
-            headerRowIndex = 7;
-            colMap = {
-                'date': 1, 'receipt': 2, 'description': 3, 'card member': 4,
-                'account #': 5, 'amount': 6, 'extended details': 7,
-                'account number': 5
-            };
+        if (Object.keys(colMap).length === 0) {
+            console.log('Warning: No valid header row found. Please ensure the file has "Date" and "Amount" columns.');
         }
 
         inputSheet.eachRow((row, rowNumber) => {
             if (rowNumber <= headerRowIndex) return;
 
-            const getVal = (key) => {
-                let idx = colMap[key];
-                if (!idx) idx = colMap[Object.keys(colMap).find(k => k.includes(key))];
-                if (!idx) return '';
-                return row.getCell(idx).value;
+            const getVal = (headerKeys) => {
+                // Try strict match first, then constants match
+                for (const key of headerKeys) {
+                    if (colMap[key]) return row.getCell(colMap[key]).value;
+                    // Look for fuzzy match in colMap keys
+                    const foundKey = Object.keys(colMap).find(k => k.includes(key) || key.includes(k));
+                    if (foundKey) return row.getCell(colMap[foundKey]).value;
+                }
+                return '';
+            };
+
+            // Helper wrapper for single key or list
+            const getField = (headerList) => {
+                // Find column index that matches headerList
+                const foundColName = Object.keys(colMap).find(k => findCol(k, headerList));
+                if (foundColName) return row.getCell(colMap[foundColName]).value;
+                return '';
             };
 
             const rec = {
-                date: getVal('date'),
-                desc: getVal('description'),
-                amount: getVal('amount'),
-                member: getVal('card member') || getVal('member'),
-                extended: getVal('extended details'),
-                receipt: getVal('receipt'),
-                account: getVal('account') || getVal('account #') || getVal('account number') || globalAccountNum
+                date: getField(HEADERS.DATE),
+                desc: getField(HEADERS.DESC),
+                amount: getField(HEADERS.AMOUNT),
+                member: getField(HEADERS.MEMBER),
+                extended: getField(HEADERS.EXTENDED),
+                receipt: getField(HEADERS.RECEIPT),
+                account: getField(HEADERS.ACCOUNT) || globalAccountNum
             };
 
             // Enhanced Junk Filter
