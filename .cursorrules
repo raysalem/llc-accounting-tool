@@ -1,0 +1,27 @@
+# LLC Accounting Tool - Project Rules
+
+## 1. Technology Stack
+- **Runtime**: Node.js (Current LTS).
+- **Excel Handling**: Use `exceljs` exclusively. Do not use `xlsx` or other libraries unless absolutely necessary.
+- **Style**: Standard JavaScript (ES6+), 4-space indentation.
+
+## 2. Core Architectural Principles
+- **Dynamic Column Mapping**: 
+  - NEVER hardcode column headers to integer indices (e.g., `row.getCell(3)`).
+  - ALWAYS scan the header row (typically row 1 or determined by signature) to find columns by name (e.g., "Category", "Amount").
+  - Use flexible string matching (case-insensitive, trimmed).
+- **Safety First**:
+  - Scripts that modify data (`update_financials.js`) must default to **READ-ONLY** mode.
+  - Require a `--save` flag to write changes back to the Excel file.
+  - Require a `--checker` flag for deep data integrity scanning.
+- **Data Integrity**:
+  - When clearing data (e.g., in `load_transactions.js`), prefer the "Delete and Recreate Sheet" method to avoid lingering metadata or table corruption.
+  - Always validate Categories and Vendors against the "Setup" sheet.
+
+## 3. CLI User Experience
+- **Output formatting**: Use clear headers (e.g., `--- SECTION ---`) to organize console output.
+- **Feedback**: detailed logs should be printed when `--checker` is used, but standard output should be clean and summary-focused.
+
+## 4. Testing & Maintenance
+- **Tests**: Every major feature or flag must have a corresponding test script in the `tests/` directory.
+- **Documentation**: Keep `README.md` and `PROJECT_CONTEXT.md` updated when adding new arguments or workflows.
