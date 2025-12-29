@@ -21,12 +21,24 @@ async function inspectFile() {
     const setupSheet = workbook.getWorksheet('Setup');
     if (setupSheet) {
         console.log('\n--- Setup: Sheet Configurations ---');
+
+        const headerRow = setupSheet.getRow(1);
+        const colMap = {};
+        headerRow.eachCell((cell, colNumber) => {
+            const val = cell.value ? cell.value.toString().toLowerCase().trim() : '';
+            if (val.includes('sheet name') && !val.includes('config')) colMap.name = colNumber; // 'Sheet Name' vs 'Sheet Name (Config)'
+            if (val.includes('sheet name (config)')) colMap.name = colNumber;
+            if (val.includes('account type') || val.includes('sheet type')) colMap.type = colNumber;
+            if (val.includes('flip')) colMap.flip = colNumber;
+            if (val.includes('header') || val.includes('offset')) colMap.offset = colNumber;
+        });
+
         setupSheet.eachRow((row, r) => {
             if (r === 1) return;
-            const name = row.getCell(9).value;
-            const type = row.getCell(10).value;
-            const flip = row.getCell(11).value;
-            const offset = row.getCell(12).value;
+            const name = colMap.name ? row.getCell(colMap.name).value : null;
+            const type = colMap.type ? row.getCell(colMap.type).value : null;
+            const flip = colMap.flip ? row.getCell(colMap.flip).value : null;
+            const offset = colMap.offset ? row.getCell(colMap.offset).value : null;
             if (name) {
                 console.log(`Sheet: ${name.toString().padEnd(25)} | Type: ${type.toString().padEnd(10)} | Flip: ${flip.toString().padEnd(5)} | Offset: ${offset}`);
             }
