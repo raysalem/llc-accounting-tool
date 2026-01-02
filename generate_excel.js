@@ -21,7 +21,8 @@ Example:
 }
 
 async function createTemplate() {
-    const filename = 'LLC_Accounting_Template.xlsx';
+    const args = process.argv.slice(2);
+    const filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
     const workbook = new ExcelJS.Workbook();
 
     const setupSheet = workbook.addWorksheet('Setup');
@@ -44,20 +45,23 @@ async function createTemplate() {
         ['Sales', 'General', 'Income', 'P&L'],
         ['Rent', 'Office', 'Expense', 'P&L'],
         ['Checking Account', 'Bank', 'Asset', 'Balance Sheet'],
-        ['Credit Card', 'Liability', 'Liability', 'Balance Sheet'],
+        ['Credit Card', 'CC', 'Liability', 'Balance Sheet'],
         ['AX CC', 'Liability', 'Liability', 'Balance Sheet'],
     ];
     setupSheet.addRows(categories);
 
-    setupSheet.getCell('I2').value = 'Bank Transactions';
-    setupSheet.getCell('J2').value = 'Bank';
-    setupSheet.getCell('K2').value = 'No';
-    setupSheet.getCell('L2').value = 1;
+    // Default Sheet Configurations
+    // Row 4 corresponds to 'Checking Account'
+    setupSheet.getCell('I4').value = 'Bank Transactions';
+    setupSheet.getCell('J4').value = 'Bank';
+    setupSheet.getCell('K4').value = 'No';
+    setupSheet.getCell('L4').value = 1;
 
-    setupSheet.getCell('I3').value = 'Credit Card Transactions';
-    setupSheet.getCell('J3').value = 'CC';
-    setupSheet.getCell('K3').value = 'Yes'; // Default to Yes for CC
-    setupSheet.getCell('L3').value = 1;
+    // Row 5 corresponds to 'Credit Card'
+    setupSheet.getCell('I5').value = 'Credit Card Transactions';
+    setupSheet.getCell('J5').value = 'CC';
+    setupSheet.getCell('K5').value = 'Yes'; // Default to Yes for CC
+    setupSheet.getCell('L5').value = 1;
 
     // Add some sample vendors/customers
     setupSheet.getCell('F2').value = 'Starbucks';
