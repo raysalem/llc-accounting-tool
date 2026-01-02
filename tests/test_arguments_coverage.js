@@ -24,8 +24,8 @@ async function testArguments() {
     // 1. Source Excel for load_transactions (Testing Excel Input support)
     const srcWorkbook = new ExcelJS.Workbook();
     const srcSheet = srcWorkbook.addWorksheet('Sheet1');
-    srcSheet.addRow(['Date', 'Description', 'Amount']);
-    srcSheet.addRow([new Date('2025-01-01'), 'Test Excel Source', -50.00]);
+    srcSheet.addRow(['Date', 'Description', 'Amount', 'Category']);
+    srcSheet.addRow([new Date('2025-01-01'), 'Test Excel Source', -50.00, 'Office Supplies']);
     await srcWorkbook.xlsx.writeFile(SRC_EXCEL);
 
     // 2. Target Template (Clean Slate)

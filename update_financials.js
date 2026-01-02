@@ -11,6 +11,11 @@ async function updateFinancials() {
     const showPLSub = args.includes('--pl-sub');
     const showChecker = args.includes('--checker');
 
+    // Parse --details <Category>
+    const detailsIndex = args.indexOf('--details');
+    const targetDetailsCategory = detailsIndex !== -1 && args[detailsIndex + 1] ? args[detailsIndex + 1].toLowerCase().trim() : null;
+    const showDetails = !!targetDetailsCategory;
+
     // Help Menu
     if (args.includes('--help')) {
         console.log(`
@@ -26,13 +31,14 @@ Arguments:
 Flags:
   --help          Show this help message.
   --save          Save changes to the Excel file (Summary tab and formatting).
-                  (Default behavior is PRINT ONLY, which does not modify the file).
+                  (Default behavior is print-only, which does not modify the file).
   --pl            Print the Profit & Loss statement to the console.
   --bs            Print the Balance Sheet to the console.
   --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
   --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
   --vendor        (Optional) Print spending statistics by Vendor.
   --customer      (Optional) Print income statistics by Customer.
+  --details "Cat" (Optional) List all transactions for a specific Category (e.g., --details "Office Supplies").
 
 Example:
   node update_financials.js "My_Books_2025.xlsx" --pl --checker --save
@@ -40,7 +46,19 @@ Example:
         return;
     }
 
-    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker;
+    const knownFlags = [
+        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--checker', '--details', '--help'
+    ];
+
+    // Check for unknown arguments
+    const unknownArgs = args.filter(a => a.startsWith('--') && !knownFlags.includes(a));
+    if (unknownArgs.length > 0) {
+        console.error(`Error: Unknown argument(s): ${unknownArgs.join(', ')}`);
+        console.error('Run with --help to see available options.');
+        process.exit(1);
+    }
+
+    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker || showDetails;
     const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
@@ -86,6 +104,7 @@ Example:
     const illegalVendors = [];
     const illegalCustomers = [];
     const uncategorizedDetails = [];
+    const detailsRows = [];
     const offsetWarnings = [];
 
     // --- Helper ---
@@ -116,88 +135,137 @@ Example:
         return map;
     }
 
-    // --- 1. Read Setup ---
+    // --- 1. Read Setup (Decoupled Tables) ---
     const setupHeaders = getHeaderMap(setupSheet, 1);
+    if (showChecker) console.log('Setup Headers:', Array.from(setupHeaders.keys()));
 
-    // Column Name Mapping (Dynamic)
+    // Table 1: Category Info
     const colCategory = setupHeaders.get('category');
     const colSubCategory = setupHeaders.get('sub-category') || setupHeaders.get('subcategory');
     const colType = setupHeaders.get('type');
     const colReport = setupHeaders.get('report');
+
+    // Table 2: Vendors
     const colVendor = setupHeaders.get('vendors') || setupHeaders.get('vendor');
+
+    // Table 3: Customers
     const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
 
+    // Table 4: Sheet Info
     const colSheetName = setupHeaders.get('sheet name (config)') || setupHeaders.get('sheet name');
     const colSheetType = setupHeaders.get('account type') || setupHeaders.get('sheet type');
-    // In generate_excel.js: 
-    // Col 1: Category
-    // Col 2: Sub-Category
-    // Col 3: Type
-    // Col 4: Report
-    // Col 9: Sheet Name (Config)
-    // Col 10: Account Type
-
-    // Let's rely on map. If map fails, fallbacks are risky but kept for backward compat.
-
     const colFlip = setupHeaders.get('flip polarity? (yes/no)') || setupHeaders.get('flip polarity?') || setupHeaders.get('flip');
     const colOffset = setupHeaders.get('header row') || setupHeaders.get('offset');
 
+    if (showChecker) {
+        console.log('--- DEBUG MAPPING ---');
+        console.log(`Col Category: ${colCategory}`);
+        console.log(`Col Sub-Category: ${colSubCategory}`);
+        console.log(`Col Sheet Name: ${colSheetName}`);
+        console.log(`Col Sheet Type: ${colSheetType}`);
+    }
+
+    // --- Pass 1: Read Reference Tables (Categories, Vendors, Customers) ---
     setupSheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
-        const catName = getVal(row.getCell(colCategory));
-        const accountType = getVal(row.getCell(colSubCategory)); // Wait, old code mapped Col 2 to "Account Type"? 
-        // Checking old code: "const accountType = getVal(row.getCell(2)); // Account Type column"
-        // But in generate_excel.js, Col 2 is 'Sub-Category'. Col 3 is 'Type'. 
-        // This suggests a potential bug in original code or naming confusion.
-        // Original code: "const accountType = getVal(row.getCell(2));"
-        // generate_excel: "{ header: 'Sub-Category', key: 'subcategory', width: 25 },"
-        // If the user meant "Type" (Asset/Liability/Income/Expense), that is Col 3.
-        // Let's assume Col 2 was effectively unused or misused as Type? 
-        // Actually, looking at uniqueCategories.set: 
-        // uniqueCategories.set(lower, { report, accountType, displayName: trimmed });
-        // The 'accountType' is used later for matching logic. 
-        // In generate_excel.js, Col 3 is 'Type' (Asset etc), Col 2 is Sub-Cat. 
-        // I will map 'accountType' to the 'Type' column (Col 3) correctly now.
 
-        const typeVal = getVal(row.getCell(colType));
-        const report = getVal(row.getCell(colReport));
-
+        // 1. Process Category Table
+        const catName = colCategory ? getVal(row.getCell(colCategory)) : null;
         if (catName) {
             const trimmed = catName.toString().trim();
             const lower = trimmed.toLowerCase();
+            const typeVal = colType ? getVal(row.getCell(colType)) : '';
+            const subCatVal = colSubCategory ? getVal(row.getCell(colSubCategory)) : '';
+            const report = colReport ? getVal(row.getCell(colReport)) : '';
             validCategories.add(lower);
-            uniqueCategories.set(lower, { report, accountType: typeVal, displayName: trimmed });
+            uniqueCategories.set(lower, {
+                report,
+                accountType: typeVal,
+                subCategory: subCatVal,
+                displayName: trimmed
+            });
         }
 
-        const vendor = getVal(row.getCell(colVendor));
+        // 2. Process Vendor Table
+        const vendor = colVendor ? getVal(row.getCell(colVendor)) : null;
         if (vendor) {
             const vRaw = vendor.toString().trim();
             validVendors.set(vRaw.toLowerCase(), vRaw);
         }
-        const customer = getVal(row.getCell(colCustomer));
+
+        // 3. Process Customer Table
+        const customer = colCustomer ? getVal(row.getCell(colCustomer)) : null;
         if (customer) {
             const cRaw = customer.toString().trim();
             validCustomers.set(cRaw.toLowerCase(), cRaw);
         }
+    });
 
-        const confSheetName = getVal(row.getCell(colSheetName));
-        const confType = getVal(row.getCell(colSheetType));
-        const confFlip = getVal(row.getCell(colFlip));
-        const confOffset = getVal(row.getCell(colOffset));
+    // --- Pass 2: Read Sheet Configurations & Link ---
+    setupSheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
 
-        if (confSheetName && confType) {
-            sheetConfigs.push({
-                name: confSheetName.toString().trim(),
-                type: confType.toString().trim(),
-                flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
-                offset: parseInt(confOffset) || 0,
-                // The Category Name (Column 1) is the GL Account this sheet represents
-                linkedAccount: catName ? catName.toString().trim() : null
-            });
+        // 4. Process Sheet Info Table
+        const confSheetName = colSheetName ? getVal(row.getCell(colSheetName)) : null;
+        if (confSheetName) {
+            const confType = colSheetType ? getVal(row.getCell(colSheetType)) : '';
+            const confFlip = colFlip ? getVal(row.getCell(colFlip)) : '';
+            const confOffset = colOffset ? getVal(row.getCell(colOffset)) : '';
+
+            if (confSheetName && confType) {
+                const cType = confType.toString().trim();
+                let link = null;
+
+                // Try to find a linked GL Account based on "Account Type" match
+                // We match Sheet.Type (Col J) against Category.SubCategory (Col B) or Category.Type (Col C)
+                // or even Category.Name (Col A) for maximum flexibility.
+                for (const [catRaw, catData] of uniqueCategories.entries()) {
+                    const catSub = catData.subCategory ? catData.subCategory.toLowerCase() : 'N/A';
+                    const targetType = cType.toLowerCase();
+
+                    if (showChecker && cType === 'Bank') {
+                        // targeted debug
+                        console.log(`Checking Cat: "${catData.displayName}" | Sub: "${catSub}" vs Target: "${targetType}"`);
+                    }
+
+                    // Check 'Type' (Asset/Liability)
+                    if (catData.accountType && catData.accountType.toLowerCase() === targetType) {
+                        link = catData.displayName;
+                        break;
+                    }
+                    // Check 'Sub-Category' (Bank/General) - often used for 'Bank'
+                    if (catData.subCategory && catData.subCategory.toLowerCase() === targetType) {
+                        link = catData.displayName;
+                        break;
+                    }
+                    // Check exact Category Name match
+                    if (catData.displayName && catData.displayName.toLowerCase() === targetType) {
+                        link = catData.displayName;
+                        break;
+                    }
+                }
+
+                if (showChecker) {
+                    console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${link || 'NONE'}"`);
+                    if (!link) {
+                        console.log('Setup Headers:', JSON.stringify(Array.from(setupHeaders.keys())));
+                    }
+                }
+
+                sheetConfigs.push({
+                    name: confSheetName.toString().trim(),
+                    type: cType,
+                    flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
+                    offset: parseInt(confOffset) || 0,
+                    linkedAccount: link
+                });
+            }
         }
     });
 
     if (sheetConfigs.length === 0) {
+        // Fallback defaults if no config found in Setup
+        console.warn('[!] No sheet configurations found in Setup. Using defaults.');
         sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false, offset: 1, linkedAccount: null });
         sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: true, offset: 1, linkedAccount: null });
     }
@@ -335,6 +403,18 @@ Example:
 
                 const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
                 catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
+
+                // Capture Details
+                if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
+                    detailsRows.push({
+                        date: displayDate,
+                        desc: rawDesc,
+                        subCat: sName,
+                        amount: amount,
+                        sheet: sheet.name,
+                        row: r
+                    });
+                }
             }
 
             if (vendorVal) {
@@ -365,10 +445,18 @@ Example:
             // Flow: Income (+), Expense (-).
             // +100 (Inc) -> Debit Bank -> Stats should decrease (more negative).
             if (!catStats[linkName]) catStats[linkName] = { total: 0, subCats: {} };
+            const previous = catStats[linkName].total;
             catStats[linkName].total -= sheetTotal;
+            if (showChecker || showBS) {
+                console.log(`[Linkage Logic] Applied Sheet Total (${sheetTotal.toFixed(2)}) to Account "${linkName}". Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
+            }
 
             if (showChecker) {
                 console.log(`Applied Sheet Total (${sheetTotal}) to Linked Account "${linkName}". New Balance: ${catStats[linkName].total}`);
+            }
+        } else {
+            if (showChecker || showBS) {
+                console.log(`[Linkage Logic] Sheet "${config.name}" (Type: ${config.type}) has NO LINKED ACCOUNT. Total (${sheetTotal.toFixed(2)}) NOT applied to any Balance Sheet asset.`);
             }
         }
     }
@@ -445,6 +533,18 @@ Example:
             // Ledger SubCat aggregation
             const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
             catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + impact;
+
+            // Capture Details
+            if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
+                detailsRows.push({
+                    date: displayDate,
+                    desc: rawDesc,
+                    subCat: sName,
+                    amount: impact,
+                    sheet: 'Ledger',
+                    row: r
+                });
+            }
 
             // Vendor / Customer Stats from Ledger
             if (vendorVal) {
@@ -537,6 +637,26 @@ Example:
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
     if (showAll || showVendor) printSection('VENDOR SPENDING', reports.vendors);
     if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
+
+    if (showDetails) {
+        console.log(`\n--- DETAILS: "${targetDetailsCategory}" ---`);
+        if (detailsRows.length === 0) {
+            console.log('(No matching transactions found)');
+        } else {
+            console.log(`Date`.padEnd(12) + `Description`.padEnd(35) + `Sub-Cat`.padEnd(20) + `Amount`.padStart(12) + `  Source`);
+            console.log(`-`.repeat(85));
+            let total = 0;
+            detailsRows.sort((a, b) => a.date.localeCompare(b.date));
+            detailsRows.forEach(r => {
+                total += r.amount;
+                console.log(
+                    `${r.date.padEnd(12)}${r.desc.substring(0, 34).padEnd(35)}${r.subCat.substring(0, 19).padEnd(20)}${r.amount.toFixed(2).padStart(12)}  ${r.sheet} (Row ${r.row})`
+                );
+            });
+            console.log(`-`.repeat(85));
+            console.log(`TOTAL`.padEnd(67) + total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(12));
+        }
+    }
 
     const hasIssues = uncategorizedDetails.length > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0;
     if (hasIssues) {

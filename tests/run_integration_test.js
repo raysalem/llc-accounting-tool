@@ -61,7 +61,7 @@ async function runTest() {
     await workbook.xlsx.writeFile(TEST_FILE);
 
     console.log('\n--- Phase 6: Run Financial Report (with Checker) ---');
-    execSync(`node update_financials.js ${TEST_FILE} --print-only --pl --bs --checker`, { stdio: 'inherit' });
+    execSync(`node update_financials.js ${TEST_FILE} --pl --bs --checker`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 7: Save Test Artifact ---');
     const ARTIFACT_PATH = 'tests/Full_Accounting_Test_Case.xlsx';
@@ -74,11 +74,12 @@ async function runTest() {
     // CC: -180.50
     // Office: -165.00 (CSV) - 50 (Ledger Debit) = -215.00
     // Net Income: 5819.50 (CSV) - 50 (Ledger) = 5769.50
+    // Bank Balance note: 6000 (CSV) + 1000 (Ledger) + 150 (Test Junk Rows) = 7150.00
 
     console.log('Test completed. Check output above for:');
-    console.log('Bank Balance: 7000.00');
-    console.log('CC Balance: -180.50');
-    console.log('Net Income: 5769.50');
+    console.log('Bank Balance: 7,150.00');
+    console.log('CC Balance: 180.50'); // Displayed as positive Liability in BS report
+    console.log('Net Income: 5,769.50');
 }
 
 runTest().catch(console.error);
