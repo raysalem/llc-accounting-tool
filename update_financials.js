@@ -1,5 +1,31 @@
 const ExcelJS = require('exceljs');
 const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+function resolveShortcut(filePath) {
+    try {
+        const ext = path.extname(filePath).toLowerCase();
+        if (ext === '.lnk') {
+            const escapedPath = filePath.replace(/'/g, "''");
+            const command = `powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).CreateShortcut('${escapedPath}').TargetPath"`;
+            const target = execSync(command).toString().trim();
+            if (target) return target;
+        } else if (ext === '.url') {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const match = content.match(/^URL=(.*)$/m);
+            if (match && match[1]) {
+                let target = match[1].trim();
+                if (target.startsWith('file:///')) target = target.replace('file:///', '');
+                else if (target.startsWith('file://')) target = target.replace('file://', '');
+                return decodeURIComponent(target);
+            }
+        }
+    } catch (e) {
+        console.error(`Warning: Failed to resolve shortcut '${filePath}': ${e.message}`);
+    }
+    return filePath;
+}
 
 async function updateFinancials() {
     const args = process.argv.slice(2);
@@ -24,9 +50,10 @@ Usage: node update_financials.js [filename] [flags]
 Description:
   Updates the financial accounting spreadsheet. It reads the Setup, Ledger, and Transaction sheets,
   categorizes transactions, balances the ledger, and generates P&L / Balance Sheet reports in standard Output format.
+  Supports .lnk and .url shortcut files as input.
 
 Arguments:
-  [filename]      Path to the Excel file (default: LLC_Accounting_Template.xlsx)
+  [filename]      Path to the Excel file or shortcut (default: LLC_Accounting_Template.xlsx)
 
 Flags:
   --help          Show this help message.
@@ -62,6 +89,16 @@ Example:
     const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
+
+    // Resolve shortcut if needed
+    if (fs.existsSync(filename)) {
+        const resolved = resolveShortcut(filename);
+        if (resolved !== filename) {
+            console.log(`Resolved shortcut '${filename}' -> '${resolved}'`);
+            filename = resolved;
+        }
+    }
+
     if (!fs.existsSync(filename)) {
         console.error(`Error: File '${filename}' not found.`);
         return;
@@ -745,6 +782,20 @@ Example:
             if (vends) { summarySheet.getCell(`A${summaryRow}`).value = '  Unknown Vendors'; summarySheet.getCell(`B${summaryRow}`).value = vends; summaryRow++; }
             summaryRow++;
         });
+    }
+
+    // Backup before save
+    try {
+        const d = new Date();
+        const pad = (n) => n.toString().padStart(2, '0');
+        const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        const ext = path.extname(filename);
+        const base = path.basename(filename, ext);
+        const backupPath = path.join(path.dirname(filename), `${base}_backup_${timestamp}${ext}`);
+        fs.copyFileSync(filename, backupPath);
+        console.log(`\nBackup created: ${backupPath}`);
+    } catch (e) {
+        console.error(`Warning: Failed to create backup: ${e.message}`);
     }
 
     try {
