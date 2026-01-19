@@ -55,7 +55,13 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 ### 3. Testing (`3_testing.md`)
 - **Strategy**: How we verify the changes.
 - **Execution**: Output of test runs or verification commands.
-- **CRITICAL**: You MUST run the code/command and confirm the output matches expectations before concluding. Do not assume logic works without execution.
+- **CRITICAL REQUIREMENTS**:
+  - You MUST run the code/command with the EXACT user scenario before concluding.
+  - You MUST verify output against the user's stated expectations, not your assumptions.
+  - For display/report features: Run the command and inspect the actual output.
+  - For threshold/filter logic: Test edge cases (just above, just below, exactly at threshold).
+  - For new features: Create an automated test in `tests/` directory.
+  - Do NOT assume logic works without execution. Do NOT skip verification.
 - **Regression**: Confirmation that existing features still work.
 
 ### 4. Reflection (`4_reflection.md`)
@@ -68,3 +74,32 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 - **Mandatory Review**: Before making changes, you MUST review `PROJECT_CONTEXT.md` and `README.md` to understand the system and assess impact.
 - **Update Cycle**: If logic changes (e.g. Polarity, Flag Names), you MUST update these documents immediately. Do not leave documentation drift.
 - **Integration**: Do not make changes in isolation. Explicitly check for collisions with existing logic (e.g. Ledger vs Transaction Loops).
+
+## 8. Lessons Learned: Anti-Slop Rules
+**These rules exist because we made these mistakes. Do not repeat them.**
+
+### Testing Failures
+1. **"Required" Column (2026-01-19)**: Implemented display logic without testing actual output. Showed "YES" for vendors under threshold.
+   - **Rule**: ALWAYS run `--vendor` report and inspect actual output when changing display logic.
+   - **Rule**: Test edge cases: vendors just above threshold, just below threshold, exactly at threshold.
+
+2. **Polarity Logic (2026-01-19)**: Changed polarity calculation without verifying with user's actual data file.
+   - **Rule**: When user provides a test file path, ALWAYS run against that file before concluding.
+   - **Rule**: If user says "this is wrong", they have SEEN the output. Trust their observation.
+
+3. **Map Storage (2026-01-19)**: Changed internal data structure (String → Object) without updating ALL consumer code.
+   - **Rule**: When changing a shared data structure, grep for ALL usages and update them.
+   - **Rule**: Run integration tests after structural changes.
+
+### Implementation Patterns
+1. **Display vs Storage**: Separate what you STORE (configuration) from what you DISPLAY (business rules applied).
+2. **Threshold Checks**: Always check thresholds at display/output time, not just at storage time.
+3. **Legacy Support**: When supporting legacy columns, explicitly set ALL fields that new columns would provide.
+
+### Before Concluding ANY Task
+- [ ] Did I run the exact command the user would run?
+- [ ] Did I inspect the actual output (not just "it didn't crash")?
+- [ ] Did I test with the user's data file if they provided one?
+- [ ] Did I test edge cases for any threshold/filter logic?
+- [ ] Did I create an automated test for new features?
+- [ ] Did I run the integration test suite?
