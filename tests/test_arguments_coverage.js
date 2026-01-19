@@ -146,6 +146,10 @@ async function testArguments() {
     if (!summary) throw new Error('--save failed: Summary tab not created');
     if (summary.getCell('A3').value !== 'Profit & Loss') throw new Error('Summary tab content invalid');
 
+    // 8. Test: --1099
+    console.log('Testing --1099...');
+    run(`node report.js "${TARGET_FILE}" --1099`);
+
     // 8. Test: --help
     const upHelp = run('node report.js --help');
     if (!upHelp.includes('Usage: node report.js')) throw new Error('report.js --help failed');

@@ -37,3 +37,26 @@
 - **Maintainability**:
   - Prefer small, pure helper functions over deep nesting.
   - Comments should explain "Why", not "What".
+
+## 6. Workflow: The 4-MD Process
+For every significant task or prompt, you must generate 4 Markdown documents in `.agent/tasks/[YYYY-MM-DD]_[Short_Name]/`:
+
+### 1. Plan (`1_plan.md`)
+- **Problem**: Clear statement of what needs to be solved.
+- **Approach**: High-level strategy.
+- **Steps**: Concrete, numbered execution steps.
+
+### 2. Implementation (`2_implementation.md`)
+- **Details**: Technical specifics of the changes.
+- **Robustness**: How we are ensuring "low slop" (no magic numbers, strict types).
+- **Considerations**: Edge cases and potential side effects.
+
+### 3. Testing (`3_testing.md`)
+- **Strategy**: How we verify the changes.
+- **Execution**: Output of test runs or verification commands.
+- **Regression**: Confirmation that existing features still work.
+
+### 4. Reflection (`4_reflection.md`)
+- **Review**: Did we solve the prompt?
+- **Quality**: Self-assessment of code quality and robustness.
+- **Next**: Operations or cleanup required.

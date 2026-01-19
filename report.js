@@ -36,7 +36,7 @@ async function updateFinancials() {
     const showCustomer = args.includes('--customer');
     const showPLSub = args.includes('--pl-sub');
     const showChecker = args.includes('--checker');
-    const show1099 = args.includes('--1099-nec') || args.includes('--1099');
+    const show1099 = args.includes('--1099') || args.includes('--1099-nec'); // Support both, prefer --1099
 
     // Parse --details <Category>
     const detailsIndex = args.indexOf('--details');
@@ -66,7 +66,7 @@ Flags:
   --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
   --vendor        (Optional) Print spending statistics by Vendor.
   --customer      (Optional) Print income statistics by Customer.
-  --1099-nec      (Optional) Generate a 1099-NEC report summing payments to enabled vendors.
+  --1099          (Optional) Generate 1099-NEC and 1099-INT reports for enabled vendors.
   --details "Cat" (Optional) List all transactions for a specific Category (e.g., --details "Office Supplies").
 
 Example:
@@ -76,7 +76,7 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--checker', '--details', '--help', '--1099-nec', '--1099'
+        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--checker', '--details', '--help', '--1099', '--1099-nec'
     ];
 
     // Check for unknown arguments
