@@ -55,6 +55,7 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 ### 3. Testing (`3_testing.md`)
 - **Strategy**: How we verify the changes.
 - **Execution**: Output of test runs or verification commands.
+- **CRITICAL**: You MUST run the code/command and confirm the output matches expectations before concluding. Do not assume logic works without execution.
 - **Regression**: Confirmation that existing features still work.
 
 ### 4. Reflection (`4_reflection.md`)
