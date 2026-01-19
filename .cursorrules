@@ -63,3 +63,8 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 - **Quality**: Self-assessment of code quality and robustness.
 - **Rules Check**: Did I follow all predicate/rules accordingly? Were there conflicts in precedence? Are there any grey areas the user should be aware of?
 - **Next**: Operations or cleanup required.
+
+## 7. Documentation & Impact
+- **Mandatory Review**: Before making changes, you MUST review `PROJECT_CONTEXT.md` and `README.md` to understand the system and assess impact.
+- **Update Cycle**: If logic changes (e.g. Polarity, Flag Names), you MUST update these documents immediately. Do not leave documentation drift.
+- **Integration**: Do not make changes in isolation. Explicitly check for collisions with existing logic (e.g. Ledger vs Transaction Loops).
