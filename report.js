@@ -318,7 +318,9 @@ Example:
             const pKey = getVal(row.getCell(colPayerKey));
             const pVal = getVal(row.getCell(colPayerValue));
             if (pKey) {
-                payerInfo[pKey.toString().trim()] = pVal.toString().trim();
+                const kStr = pKey.toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+                payerInfo[kStr] = pVal.toString().trim();
+                // console.log(`[DEBUG] Payer Info: '${kStr}' -> '${payerInfo[kStr]}'`);
             }
         }
     });
@@ -906,22 +908,26 @@ Example:
         // Filter by threshold & polarity
         const csvRows = [];
         all1099.forEach(r => {
-            // Polarity Logic: Expenses are Negative. Income (Refunds) are Positive.
-            // We only report Net Expenses (Payments to Vendor).
-            // If Balance is Positive (Net Refund), reportable amount is 0.
-            const val = r.value < 0 ? Math.abs(r.value) : 0;
-            if (val >= r.threshold) {
+            // Polarity Logic: 
+            // - Threshold Check: Must use ABS (e.g. |-737| > 600).
+            // - Output Value: User requests SIGNED value (e.g. -737.50).
+            // - Filter: Only Net Expenses (Negative Values). Positive values (Income) are 0 -> Less than threshold -> Dropped.
+
+            const absVal = Math.abs(r.value);
+            const isExpense = r.value < 0; // Net Payment
+
+            if (isExpense && absVal >= r.threshold) {
                 const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
                 csvRows.push({
                     ...d,
-                    amount: val,
+                    amount: absVal, // Positive value for IRS
                     form: r.form
                 });
             }
         });
 
         if (csvRows.length > 0) {
-            const payerName = payerInfo['Name'] || payerInfo['Company Name'] || 'Unknown_Payer';
+            const payerName = payerInfo['companyname'] || payerInfo['payername'] || payerInfo['businessname'] || payerInfo['name'] || 'Unknown_Payer';
             const safeName = payerName.replace(/[^a-z0-9]/gi, '_');
             const csvPath = path.join(path.dirname(filename), `${safeName}-1099.csv`);
 
@@ -929,15 +935,15 @@ Example:
             // "Name", "TIN", "Address", "City", "State", "Zip", "Country", "Email", "Phone" -> from PayerInfo
             // Since PayerInfo is loose KV, we try standard keys
             const p = payerInfo;
-            const pName = p['Name'] || p['Company Name'] || '';
-            const pTIN = p['TIN'] || p['EIN'] || '';
-            const pAddr = p['Address'] || '';
-            const pCity = p['City'] || '';
-            const pState = p['State'] || '';
-            const pZip = p['Zip Code'] || p['Zip'] || '';
-            const pCountry = p['Country'] || '';
-            const pEmail = p['Email'] || '';
-            const pPhone = p['Phone'] || p['Phone Number'] || '';
+            const pName = payerName;
+            const pTIN = p['tin'] || p['ein'] || p['taxid'] || '';
+            const pAddr = p['address'] || '';
+            const pCity = p['city'] || '';
+            const pState = p['state'] || '';
+            const pZip = p['zipcode'] || p['zip'] || '';
+            const pCountry = p['country'] || '';
+            const pEmail = p['email'] || '';
+            const pPhone = p['phone'] || p['phonenumber'] || '';
 
             // Build CSV Content
             // Header: Payer... , Recipient... , Amount, Form
