@@ -205,6 +205,7 @@ Example:
     // New Split Columns: "1099 Type" -> "1099type", "1099 Required" -> "1099required"
     const col1099Type = setupHeaders.get('1099type');
     const col1099Req = setupHeaders.get('1099required');
+    // console.log(`[DEBUG] 1099 Column Detection: Type=${col1099Type}, Req=${col1099Req}, Legacy=${finalCol1099}`);
 
     // Table 3: Customers
     const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
@@ -266,6 +267,10 @@ Example:
             if (col1099Type) type = getVal(row.getCell(col1099Type)).toString().trim().toUpperCase();
             if (col1099Req) req = getVal(row.getCell(col1099Req)).toString().trim().toUpperCase();
 
+            if (type || req) {
+                // console.log(`[DEBUG] Vendor ${lowerV}: Type='${type}', Req='${req}'`);
+            }
+
             // Legacy/Combined Column logic fallback
             if (!type && !req && finalCol1099) {
                 const unknownVal = getVal(row.getCell(finalCol1099)).toString().trim().toUpperCase();
@@ -280,12 +285,12 @@ Example:
 
             if (type && !isExplicitNo) {
                 if (type === 'NEC' || type === 'INT') {
-                    vendor1099Map.set(lowerV, type);
-                    if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (${type})`);
+                    vendor1099Map.set(lowerV, { type, req });
+                    // if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (${type})`);
                 }
             } else if (!type && (req === 'YES' || req === 'Y') && !isExplicitNo) {
                 // Required but no type? Default NEC
-                vendor1099Map.set(lowerV, 'NEC');
+                vendor1099Map.set(lowerV, { type: 'NEC', req });
                 if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (NEC - Default)`);
             }
 
@@ -619,9 +624,14 @@ Example:
                 const displayVendor = validVendors.get(vLower) || vStr;
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + amount;
 
-                if (vendor1099Map.has(vLower)) {
-                    const type = vendor1099Map.get(vLower);
-                    vendor1099Stats[type][displayVendor] = (vendor1099Stats[type][displayVendor] || 0) + amount;
+                const is1099 = vendor1099Map.get(vLower);
+                if (is1099) {
+                    const t = (is1099.type || 'NEC');
+                    if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
+                    if (!vendor1099Stats[t][displayVendor]) {
+                        vendor1099Stats[t][displayVendor] = 0;
+                    }
+                    vendor1099Stats[t][displayVendor] += amount;
                 }
             }
             if (customerVal) {
@@ -756,9 +766,8 @@ Example:
                 const impactVal = (dr - cr);
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + impactVal;
 
-                const is1099 = vendor1099Map.get(vLower);
                 if (is1099) {
-                    const t = is1099.type || 'NEC'; // Default safe
+                    const t = (is1099.type || 'NEC');
                     if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
                     if (!vendor1099Stats[t][displayVendor]) {
                         vendor1099Stats[t][displayVendor] = 0;
@@ -897,7 +906,10 @@ Example:
         // Filter by threshold & polarity
         const csvRows = [];
         all1099.forEach(r => {
-            const val = Math.abs(r.value);
+            // Polarity Logic: Expenses are Negative. Income (Refunds) are Positive.
+            // We only report Net Expenses (Payments to Vendor).
+            // If Balance is Positive (Net Refund), reportable amount is 0.
+            const val = r.value < 0 ? Math.abs(r.value) : 0;
             if (val >= r.threshold) {
                 const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
                 csvRows.push({
