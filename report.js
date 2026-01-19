@@ -253,8 +253,10 @@ Example:
                 // Also support "YES" -> default to NEC for backward compatibility
                 if (val1099 === 'NEC' || val1099 === 'INT') {
                     vendor1099Map.set(lowerV, val1099);
+                    if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (${val1099})`);
                 } else if (val1099 === 'YES' || val1099 === 'Y') {
                     vendor1099Map.set(lowerV, 'NEC');
+                    if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (NEC)`);
                 }
             }
 
@@ -759,17 +761,24 @@ Example:
     // Helper: 1099 Detail Printer
     const print1099 = (type, list) => {
         const threshold = 600;
-        const widthMap = { label: 20, business: 20, name: 15, ssn: 12, amount: 12 };
 
-        if (!list || list.length === 0) return;
+        if (!list || list.length === 0) {
+            if (show1099 && showChecker) console.log(`\n(No 1099-${type} tagged vendors found with activity)`);
+            return;
+        }
 
         // Filter and collect data
-        const qual = list.filter(r => r.value >= threshold).map(r => {
-            const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
-            // Fallback for Name: use Label if missing
-            // Priority: Name column -> Business Column -> Vendor Label
-            let finalName = d.name || d.business || r.label;
-            return { ...r, ...d, displayName: finalName };
+        const qual = [];
+        const skipped = [];
+
+        list.forEach(r => {
+            if (r.value >= threshold) {
+                const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
+                let finalName = d.name || d.business || r.label;
+                qual.push({ ...r, ...d, displayName: finalName });
+            } else {
+                skipped.push(r);
+            }
         });
 
         if (qual.length > 0) {
@@ -798,8 +807,10 @@ Example:
                 console.log(line);
             });
             console.log('-'.repeat(h.length));
-        } else {
-            if (show1099) console.log(`\n(No 1099-${type} vendors met the $${threshold} threshold)`);
+        }
+
+        if (skipped.length > 0 && show1099) {
+            console.log(`\n(Skipped ${skipped.length} 1099-${type} vendors under $${threshold}: ${skipped.map(s => `${s.label} ($${s.value.toFixed(2)})`).join(', ')})`);
         }
     };
 
