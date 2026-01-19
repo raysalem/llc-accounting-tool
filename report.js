@@ -128,6 +128,7 @@ Example:
     const validCategories = new Set(); // Stores lowercase for validation
     const validVendors = new Map();    // Maps lower -> Display Name
     const vendor1099Map = new Map();   // Maps lower -> 'NEC' | 'INT'
+    const vendorDetailsMap = new Map(); // Maps lower -> strict Object of details
     const validCustomers = new Map();  // Maps lower -> Display Name
     const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
     const sheetConfigs = [];
@@ -188,11 +189,16 @@ Example:
 
     // Table 2: Vendors
     const colVendor = setupHeaders.get('vendors') || setupHeaders.get('vendor');
-    const col1099 = setupHeaders.get('1099'); // Strict '1099'. If user put '1099-nec', we want them to rename or aliasing here.
-    // User requested "rename column as 1099-nec as 1099". So we look for 1099.
-    // We will support 1099-nec as legacy fallback in case they didn't rename yet, but prefer 1099.
-    const col1099Fallback = setupHeaders.get('1099-nec');
-    const finalCol1099 = col1099 || col1099Fallback;
+
+    // Additional Vendor Columns for 1099
+    const colBusiness = setupHeaders.get('business name') || setupHeaders.get('business');
+    const colName = setupHeaders.get('name') || setupHeaders.get('full name');
+    const colSSN = setupHeaders.get('ssn') || setupHeaders.get('ein') || setupHeaders.get('tax id');
+    const colAddress = setupHeaders.get('address');
+    const colEmail = setupHeaders.get('email');
+    const colPhone = setupHeaders.get('phone');
+
+    const finalCol1099 = setupHeaders.get('1099') || setupHeaders.get('1099-nec');
 
     // Table 3: Customers
     const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
@@ -251,6 +257,17 @@ Example:
                     vendor1099Map.set(lowerV, 'NEC');
                 }
             }
+
+            // Capture Details
+            vendorDetailsMap.set(lowerV, {
+                business: colBusiness ? getVal(row.getCell(colBusiness)) : '',
+                name: colName ? getVal(row.getCell(colName)) : '',
+                ssn: colSSN ? getVal(row.getCell(colSSN)) : '',
+                address: colAddress ? getVal(row.getCell(colAddress)) : '',
+                email: colEmail ? getVal(row.getCell(colEmail)) : '',
+                phone: colPhone ? getVal(row.getCell(colPhone)) : ''
+            });
+
         }
 
         // 3. Process Customer Table
@@ -395,16 +412,30 @@ Example:
         const headerRow = sheet.getRow(headerRowIndex);
         const map = isCC ? { ...ccMapDefault } : { ...bankMapDefault };
 
+        const headerNames = {}; // Store mapped header names for debugging
+
         headerRow.eachCell((cell, colNumber) => {
             const val = getVal(cell);
+            const vLower = val.toString().toLowerCase().trim();
 
-            if (findCol(val, HEADERS.DATE)) map.date = colNumber;
-            else if (findCol(val, HEADERS.DESC)) map.desc = colNumber;
-            else if (findCol(val, HEADERS.AMOUNT)) map.amount = colNumber;
-            else if (findCol(val, HEADERS.SUBCAT)) map.subCat = colNumber; // Check subcat before cat to avoid partial match if 'category' in 'sub-category'
-            else if (findCol(val, HEADERS.CATEGORY)) map.category = colNumber;
-            else if (findCol(val, HEADERS.VENDOR)) map.vendor = colNumber;
-            else if (findCol(val, HEADERS.CUSTOMER)) map.customer = colNumber;
+            if (findCol(val, HEADERS.DATE)) { map.date = colNumber; headerNames.date = val; }
+            else if (findCol(val, HEADERS.DESC)) { map.desc = colNumber; headerNames.desc = val; }
+            else if (findCol(val, HEADERS.AMOUNT)) { map.amount = colNumber; headerNames.amount = val; }
+            else if (findCol(val, HEADERS.SUBCAT)) { map.subCat = colNumber; headerNames.subCat = val; }
+            else if (findCol(val, HEADERS.CATEGORY)) { map.category = colNumber; headerNames.category = val; }
+            else if (findCol(val, HEADERS.VENDOR)) {
+                // Harden against partial matches like "Vendor Address" or "Vendor Phone"
+                if (!vLower.includes('address') && !vLower.includes('phone') && !vLower.includes('email') && !vLower.includes(' id') && !vLower.includes('zip') && !vLower.includes('state') && !vLower.includes('city')) {
+                    map.vendor = colNumber;
+                    headerNames.vendor = val;
+                }
+            }
+            else if (findCol(val, HEADERS.CUSTOMER)) {
+                if (!vLower.includes('address') && !vLower.includes('phone') && !vLower.includes('email') && !vLower.includes(' id')) {
+                    map.customer = colNumber;
+                    headerNames.customer = val;
+                }
+            }
         });
 
         if (showChecker) {
@@ -414,7 +445,8 @@ Example:
         if (showChecker) {
             console.log(`\nProcessing "${sheet.name}":`);
             console.log(`  Header Row: ${headerRowIndex}`);
-            console.log(`  Mapping: ${JSON.stringify(map)}`);
+            console.log(`  Mapping (Indices): ${JSON.stringify(map)}`);
+            console.log(`  Mapping (Headers): ${JSON.stringify(headerNames)}`);
         }
 
         sheet.eachRow((row, r) => {
@@ -724,12 +756,56 @@ Example:
             console.log(`    Unknown Vendors: ${uniqueUnknown.join(', ')}`);
         }
     }
-    if (showAll || show1099) {
-        if (reports.vendors1099NEC.length > 0) printSection('1099-NEC REPORT', reports.vendors1099NEC);
-        if (reports.vendors1099INT.length > 0) printSection('1099-INT REPORT', reports.vendors1099INT);
-        if (!reports.vendors1099NEC.length && !reports.vendors1099INT.length && show1099) {
-            console.log('\n--- 1099 REPORT ---\n(No 1099 transactions found)');
+    // Helper: 1099 Detail Printer
+    const print1099 = (type, list) => {
+        const threshold = 600;
+        const widthMap = { label: 20, business: 20, name: 15, ssn: 12, amount: 12 };
+
+        if (!list || list.length === 0) return;
+
+        // Filter and collect data
+        const qual = list.filter(r => r.value >= threshold).map(r => {
+            const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
+            // Fallback for Name: use Label if missing
+            // Priority: Name column -> Business Column -> Vendor Label
+            let finalName = d.name || d.business || r.label;
+            return { ...r, ...d, displayName: finalName };
+        });
+
+        if (qual.length > 0) {
+            console.log(`\n--- 1099-${type} REPORT (>= $${threshold}) ---`);
+            // Header
+            const h = `Vendor Label`.padEnd(20) +
+                `Business Name`.padEnd(25) +
+                `Name`.padEnd(20) +
+                `Tax ID`.padEnd(12) +
+                `Address`.padEnd(25) +
+                `Email`.padEnd(20) +
+                `Phone`.padEnd(15) +
+                `Total`.padStart(12);
+            console.log(h);
+            console.log('-'.repeat(h.length));
+
+            qual.forEach(q => {
+                const line = `${q.label.substring(0, 19).padEnd(20)}` +
+                    `${(q.business || '').substring(0, 24).padEnd(25)}` +
+                    `${(q.name || '').substring(0, 19).padEnd(20)}` +
+                    `${(q.ssn || '').substring(0, 11).padEnd(12)}` +
+                    `${(q.address || '').substring(0, 24).padEnd(25)}` +
+                    `${(q.email || '').substring(0, 19).padEnd(20)}` +
+                    `${(q.phone || '').substring(0, 14).padEnd(15)}` +
+                    `${q.value.toFixed(2).padStart(12)}`;
+                console.log(line);
+            });
+            console.log('-'.repeat(h.length));
+        } else {
+            if (show1099) console.log(`\n(No 1099-${type} vendors met the $${threshold} threshold)`);
         }
+    };
+
+    if (showAll || show1099) {
+        print1099('NEC', reports.vendors1099NEC);
+        print1099('INT', reports.vendors1099INT);
     }
     if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
 
@@ -780,6 +856,13 @@ Example:
                 illegalCustomers.filter(x => x.sheet === s).forEach(x => console.log(`      - [${x.date}] Row ${x.row}: UNKNOWN CUSTOMER "${x.value}"`));
             }
         });
+
+        // Combined Missing Vendors Report
+        if (illegalVendors.length > 0) {
+            console.log('\n--- MISSING VENDORS FOR SETUP (Copy/Paste) ---');
+            const allUniqueVendors = Array.from(new Set(illegalVendors.map(x => x.value))).sort();
+            allUniqueVendors.forEach(v => console.log(v));
+        }
     }
 
     if (offsetWarnings.length) {

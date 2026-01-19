@@ -25,3 +25,15 @@
 ## 4. Testing & Maintenance
 - **Tests**: Every major feature or flag must have a corresponding test script in the `tests/` directory.
 - **Documentation**: Keep `README.md` and `PROJECT_CONTEXT.md` updated when adding new arguments or workflows.
+
+## 5. Code Quality & Robustness
+- **Low Slop / High Precision**:
+  - **No Magic Numbers**: Define constants (e.g., `STARTING_HEADER_ROW = 1`) or configuration objects for all numeric literals.
+  - **Strict Types**: Even in vanilla JS, check types defensively (e.g., `typeof amount === 'number'`).
+  - **Edge Cases**: Explicitly handle empty cells, whitespace-only strings, nulls, and unexpected data types in Excel cells (e.g., Formula errors, Rich Text).
+- **Error Handling**:
+  - Wrap file I/O and external process calls in `try/catch` blocks with descriptive error messages.
+  - Fail gracefully: If a critical dependency (like a Setup sheet) is missing, exit with a clear message rather than crashing with a stack trace.
+- **Maintainability**:
+  - Prefer small, pure helper functions over deep nesting.
+  - Comments should explain "Why", not "What".
