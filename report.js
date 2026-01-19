@@ -129,6 +129,7 @@ Example:
     const validVendors = new Map();    // Maps lower -> Display Name
     const vendor1099Map = new Map();   // Maps lower -> 'NEC' | 'INT'
     const vendorDetailsMap = new Map(); // Maps lower -> strict Object of details
+    let payerInfo = {}; // Payer/Company Info Map
     const validCustomers = new Map();  // Maps lower -> Display Name
     const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
     const sheetConfigs = [];
@@ -199,6 +200,9 @@ Example:
     const colPhone = setupHeaders.get('phone');
 
     const finalCol1099 = setupHeaders.get('1099') || setupHeaders.get('1099-nec');
+    // New Split Columns: "1099 Type" and "1099 Required"
+    const col1099Type = setupHeaders.get('1099 type');
+    const col1099Req = setupHeaders.get('1099 required');
 
     // Table 3: Customers
     const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
@@ -208,6 +212,12 @@ Example:
     const colSheetType = setupHeaders.get('account type') || setupHeaders.get('sheet type');
     const colFlip = setupHeaders.get('flip polarity? (yes/no)') || setupHeaders.get('flip polarity?') || setupHeaders.get('flip');
     const colOffset = setupHeaders.get('header row') || setupHeaders.get('offset');
+
+    // Table 5: Payer Info (Vertical Key-Value)
+    // We look for a header "Company Info" or "Payer Info" and assume the next column is Value
+    let colPayerKey = setupHeaders.get('company info') || setupHeaders.get('payer info') || setupHeaders.get('company name');
+    let colPayerValue = colPayerKey ? colPayerKey + 1 : null;
+    // If strict "Key" / "Value" headers exist, use them? No, user said "two columns". We assume Key Col -> Value Col.
 
     if (showChecker) {
         console.log('--- DEBUG MAPPING ---');
@@ -247,17 +257,34 @@ Example:
             if (showChecker && validVendors.size % 50 === 0) console.log(`... Loaded ${validVendors.size} vendors so far ...`);
 
 
-            if (finalCol1099) {
-                const val1099 = getVal(row.getCell(finalCol1099)).toString().trim().toUpperCase();
-                // Check against known 1099 types: NEC or INT
-                // Also support "YES" -> default to NEC for backward compatibility
-                if (val1099 === 'NEC' || val1099 === 'INT') {
-                    vendor1099Map.set(lowerV, val1099);
-                    if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (${val1099})`);
-                } else if (val1099 === 'YES' || val1099 === 'Y') {
-                    vendor1099Map.set(lowerV, 'NEC');
-                    if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (NEC)`);
+            // 1099 Logic: Prioritize "Type" + "Required", Fallback to old "1099" column
+            let type = '';
+            let req = '';
+
+            if (col1099Type) type = getVal(row.getCell(col1099Type)).toString().trim().toUpperCase();
+            if (col1099Req) req = getVal(row.getCell(col1099Req)).toString().trim().toUpperCase();
+
+            // Legacy/Combined Column logic fallback
+            if (!type && !req && finalCol1099) {
+                const unknownVal = getVal(row.getCell(finalCol1099)).toString().trim().toUpperCase();
+                if (unknownVal === 'NEC' || unknownVal === 'INT') type = unknownVal;
+                else if (unknownVal === 'YES' || unknownVal === 'Y') type = 'NEC'; // Default to NEC
+            }
+
+            // Determine final status
+            // If "Required" is NO, ignored.
+            // If "Required" is YES (or blank/implied by Type presence), use Type.
+            const isExplicitNo = (req === 'NO' || req === 'N' || req === 'FALSE');
+
+            if (type && !isExplicitNo) {
+                if (type === 'NEC' || type === 'INT') {
+                    vendor1099Map.set(lowerV, type);
+                    if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (${type})`);
                 }
+            } else if (!type && (req === 'YES' || req === 'Y') && !isExplicitNo) {
+                // Required but no type? Default NEC
+                vendor1099Map.set(lowerV, 'NEC');
+                if (showChecker) console.log(`  > 1099 Detected: ${lowerV} (NEC - Default)`);
             }
 
             // Capture Details
@@ -277,6 +304,15 @@ Example:
         if (customer) {
             const cRaw = customer.toString().trim();
             validCustomers.set(cRaw.toLowerCase(), cRaw);
+        }
+
+        // 5. Process Payer Info (Vertical Table)
+        if (colPayerKey && colPayerValue) {
+            const pKey = getVal(row.getCell(colPayerKey));
+            const pVal = getVal(row.getCell(colPayerValue));
+            if (pKey) {
+                payerInfo[pKey.toString().trim()] = pVal.toString().trim();
+            }
         }
     });
     if (showChecker) console.log(`[Setup] Loaded ${validVendors.size} Valid Vendors, ${validCustomers.size} Customers, ${validCategories.size} Categories.`);
@@ -350,6 +386,62 @@ Example:
         sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false, offset: 1, linkedAccount: null });
         sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: true, offset: 1, linkedAccount: null });
     }
+
+    // --- 1.5 Load External Vendors (Override/Enrich Setup) ---
+    async function loadExternalVendors() {
+        const dir = path.dirname(filename);
+        const candidates = ['vendor.xlsx', 'vendor.csv'];
+
+        for (const fName of candidates) {
+            const fPath = path.join(dir, fName);
+            if (fs.existsSync(fPath)) {
+                if (showChecker) console.log(`[Validation] Found External Vendor File: ${fPath}`);
+
+                const vWb = new ExcelJS.Workbook();
+                if (fName.endsWith('.csv')) await vWb.csv.readFile(fPath);
+                else await vWb.xlsx.readFile(fPath);
+
+                const vSheet = vWb.worksheets[0];
+                if (!vSheet) continue;
+
+                // Simple Header Search
+                const vHeaders = getHeaderMap(vSheet, 1);
+                // Map common headers
+                const cName = vHeaders.get('name') || vHeaders.get('vendor') || vHeaders.get('full name');
+                const cBiz = vHeaders.get('business name') || vHeaders.get('business');
+                const cSSN = vHeaders.get('ssn') || vHeaders.get('tax id') || vHeaders.get('tin');
+                const cAddr = vHeaders.get('address');
+                const cEmail = vHeaders.get('email');
+                const cPhone = vHeaders.get('phone');
+
+                vSheet.eachRow((row, r) => {
+                    if (r === 1) return;
+                    // Primary Key is Name or Business
+                    let name = cName ? getVal(row.getCell(cName)) : '';
+                    let biz = cBiz ? getVal(row.getCell(cBiz)) : '';
+                    const key = (name || biz).toLowerCase().trim();
+                    if (!key) return;
+
+                    const existing = vendorDetailsMap.get(key) || {};
+
+                    // Merge: External takes precedence for empty fields, or overwrite?
+                    // "use the info in the report" -> implies external is source of truth for details
+                    vendorDetailsMap.set(key, {
+                        ...existing,
+                        name: name || existing.name,
+                        business: biz || existing.business,
+                        ssn: (cSSN ? getVal(row.getCell(cSSN)) : '') || existing.ssn,
+                        address: (cAddr ? getVal(row.getCell(cAddr)) : '') || existing.address,
+                        email: (cEmail ? getVal(row.getCell(cEmail)) : '') || existing.email,
+                        phone: (cPhone ? getVal(row.getCell(cPhone)) : '') || existing.phone,
+                    });
+                });
+                console.log(`[Validation] Loaded vendor info from ${fName}`);
+                break; // Stop after first successful file match
+            }
+        }
+    }
+    await loadExternalVendors();
 
     // --- 2. Process Transaction Sheets ---
     // --- Constants for Column Headers ---
@@ -785,6 +877,14 @@ Example:
 
         if (qual.length > 0) {
             console.log(`\n--- 1099-${type} REPORT (>= $${threshold}) ---`);
+
+            // Print Payer Info
+            if (payerInfo && Object.keys(payerInfo).length > 0) {
+                console.log('PAYER INFO:');
+                Object.entries(payerInfo).forEach(([k, v]) => console.log(`  ${k.padEnd(15)}: ${v}`));
+                console.log('-'.repeat(40));
+            }
+
             // Header
             const h = `Vendor Label`.padEnd(20) +
                 `Business Name`.padEnd(25) +
@@ -821,6 +921,69 @@ Example:
     if (showAll || show1099) {
         print1099('NEC', reports.vendors1099NEC, 600);
         print1099('INT', reports.vendors1099INT, 0);
+
+        // Generate CSV if any data found
+        const all1099 = [
+            ...reports.vendors1099NEC.map(x => ({ ...x, form: 'NEC', threshold: 600 })),
+            ...reports.vendors1099INT.map(x => ({ ...x, form: 'INT', threshold: 0 }))
+        ];
+
+        // Filter by threshold & polarity
+        const csvRows = [];
+        all1099.forEach(r => {
+            const val = Math.abs(r.value);
+            if (val >= r.threshold) {
+                const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
+                csvRows.push({
+                    ...d,
+                    amount: val,
+                    form: r.form
+                });
+            }
+        });
+
+        if (csvRows.length > 0) {
+            const payerName = payerInfo['Name'] || payerInfo['Company Name'] || 'Unknown_Payer';
+            const safeName = payerName.replace(/[^a-z0-9]/gi, '_');
+            const csvPath = path.join(path.dirname(filename), `${safeName}-1099.csv`);
+
+            // Payer fields
+            // "Name", "TIN", "Address", "City", "State", "Zip", "Country", "Email", "Phone" -> from PayerInfo
+            // Since PayerInfo is loose KV, we try standard keys
+            const p = payerInfo;
+            const pName = p['Name'] || p['Company Name'] || '';
+            const pTIN = p['TIN'] || p['EIN'] || '';
+            const pAddr = p['Address'] || '';
+            const pCity = p['City'] || '';
+            const pState = p['State'] || '';
+            const pZip = p['Zip Code'] || p['Zip'] || '';
+            const pCountry = p['Country'] || '';
+            const pEmail = p['Email'] || '';
+            const pPhone = p['Phone'] || p['Phone Number'] || '';
+
+            // Build CSV Content
+            // Header: Payer... , Recipient... , Amount, Form
+            const headers = [
+                'Payer Name', 'Payer TIN', 'Payer Address', 'Payer City', 'Payer State', 'Payer Zip', 'Payer Country', 'Payer Email', 'Payer Phone',
+                'Recipient Name', 'Recipient Business Name', 'Recipient TIN', 'Recipient Address', 'Recipient Email', 'Recipient Phone',
+                'Amount', 'Form 1099 Type'
+            ];
+
+            const fileContent = [headers.join(',')];
+
+            csvRows.forEach(r => {
+                const row = [
+                    `"${pName}"`, `"${pTIN}"`, `"${pAddr}"`, `"${pCity}"`, `"${pState}"`, `"${pZip}"`, `"${pCountry}"`, `"${pEmail}"`, `"${pPhone}"`,
+                    `"${r.name || ''}"`, `"${r.business || ''}"`, `"${r.ssn || ''}"`, `"${r.address || ''}"`, `"${r.email || ''}"`, `"${r.phone || ''}"`,
+                    r.amount.toFixed(2),
+                    r.form
+                ];
+                fileContent.push(row.join(','));
+            });
+
+            fs.writeFileSync(csvPath, fileContent.join('\n'));
+            console.log(`\n[SUCCESS] Generated 1099 CSV: ${csvPath}`);
+        }
     }
     if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
 
