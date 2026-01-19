@@ -2,6 +2,7 @@
 
 ## 1. Technology Stack
 - **Runtime**: Node.js (Current LTS).
+- **Execution**: Windows PowerShell (Avoid `&&` chaining; use sequential calls).
 - **Excel Handling**: Use `exceljs` exclusively. Do not use `xlsx` or other libraries unless absolutely necessary.
 - **Style**: Standard JavaScript (ES6+), 4-space indentation.
 

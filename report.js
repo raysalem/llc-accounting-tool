@@ -127,7 +127,7 @@ Example:
     // --- State ---
     const validCategories = new Set(); // Stores lowercase for validation
     const validVendors = new Map();    // Maps lower -> Display Name
-    const vendor1099Map = new Map();   // Maps lower -> 'NEC' | 'INT'
+    const vendor1099Map = new Map();   // Maps lower -> { type: 'NEC'|'INT', req: 'YES'|'NO'|'' }
     const vendorDetailsMap = new Map(); // Maps lower -> strict Object of details
     let payerInfo = {}; // Payer/Company Info Map
     const validCustomers = new Map();  // Maps lower -> Display Name
@@ -754,9 +754,14 @@ Example:
                 const impactVal = (dr - cr);
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + impactVal;
 
-                if (vendor1099Map.has(vLower)) {
-                    const type = vendor1099Map.get(vLower);
-                    vendor1099Stats[type][displayVendor] = (vendor1099Stats[type][displayVendor] || 0) + impactVal;
+                const is1099 = vendor1099Map.get(vLower);
+                if (is1099) {
+                    const t = is1099.type || 'NEC'; // Default safe
+                    if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
+                    if (!vendor1099Stats[t][displayVendor]) {
+                        vendor1099Stats[t][displayVendor] = 0;
+                    }
+                    vendor1099Stats[t][displayVendor] += impactVal;
                 }
             }
             if (customerVal) {
@@ -842,7 +847,28 @@ Example:
     }
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
     if (showAll || showVendor) {
-        printSection('VENDOR SPENDING', reports.vendors);
+        // printSection('VENDOR SPENDING', reports.vendors); <-- Replacing with Detailed Table
+        console.log(`\n--- VENDOR SPENDING ---`);
+        if (reports.vendors.length === 0) console.log('(No Data)');
+        else {
+            const h = `Vendor`.padEnd(30) +
+                `Total`.padStart(15) +
+                `  1099 Type`.padEnd(12) +
+                `Required`.padEnd(10);
+            console.log(h);
+            console.log('-'.repeat(h.length));
+
+            reports.vendors.forEach(r => {
+                const info = vendor1099Map.get(r.label.toLowerCase()) || { type: '', req: '' };
+                console.log(
+                    `${r.label.substring(0, 29).padEnd(30)}` +
+                    `${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}` +
+                    `  ${(info.type || '').padEnd(12)}` +
+                    `${(info.req || '').padEnd(10)}`
+                );
+            });
+        }
+
         // Explicitly warn about unknown vendors if requested
         if (illegalVendors.length > 0) {
             console.log(`\n[!] WARNING: ${illegalVendors.length} transactions have unknown Vendors.`);
@@ -850,72 +876,10 @@ Example:
             console.log(`    Unknown Vendors: ${uniqueUnknown.join(', ')}`);
         }
     }
-    // Helper: 1099 Detail Printer
+    // Helper: 1099 Detail Printer - NOW SILENT (CSV ONLY) or Minimal
+    // User said: "1099 just prints to a file and report the print"
     const print1099 = (type, list, threshold) => {
-        if (!list || list.length === 0) {
-            if (show1099 && showChecker) console.log(`\n(No 1099-${type} tagged vendors found with activity)`);
-            return;
-        }
-
-        // Filter and collect data
-        const qual = [];
-        const skipped = [];
-
-        list.forEach(r => {
-            // Polarity: Convert to positive (Absolute value to capture magnitude of spending)
-            const val = Math.abs(r.value);
-
-            if (val >= threshold) {
-                const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
-                let finalName = d.name || d.business || r.label;
-                // Store positive value for display
-                qual.push({ ...r, ...d, displayName: finalName, value: val });
-            } else {
-                skipped.push({ ...r, value: val });
-            }
-        });
-
-        if (qual.length > 0) {
-            console.log(`\n--- 1099-${type} REPORT (>= $${threshold}) ---`);
-
-            // Print Payer Info
-            if (payerInfo && Object.keys(payerInfo).length > 0) {
-                console.log('PAYER INFO:');
-                Object.entries(payerInfo).forEach(([k, v]) => console.log(`  ${k.padEnd(15)}: ${v}`));
-                console.log('-'.repeat(40));
-            }
-
-            // Header
-            const h = `Vendor Label`.padEnd(20) +
-                `Business Name`.padEnd(25) +
-                `Name`.padEnd(20) +
-                `Tax ID`.padEnd(12) +
-                `Address`.padEnd(25) +
-                `Email`.padEnd(20) +
-                `Phone`.padEnd(15) +
-                `Total`.padStart(12);
-            console.log(h);
-            console.log('-'.repeat(h.length));
-
-            qual.forEach(q => {
-                const line = `${q.label.substring(0, 19).padEnd(20)}` +
-                    `${(q.business || '').substring(0, 24).padEnd(25)}` +
-                    `${(q.name || '').substring(0, 19).padEnd(20)}` +
-                    `${(q.ssn || '').substring(0, 11).padEnd(12)}` +
-                    `${(q.address || '').substring(0, 24).padEnd(25)}` +
-                    `${(q.email || '').substring(0, 19).padEnd(20)}` +
-                    `${(q.phone || '').substring(0, 14).padEnd(15)}` +
-                    `${q.value.toFixed(2).padStart(12)}`;
-                console.log(line);
-            });
-            console.log('-'.repeat(h.length));
-        }
-
-        /*
-        if (skipped.length > 0 && show1099) {
-             console.log(`\n(Skipped ${skipped.length} 1099-${type} vendors under $${threshold}: ${skipped.map(s => `${s.label} ($${s.value.toFixed(2)})`).join(', ')})`);
-        }
-        */
+        // No Console Output here
     };
 
     if (showAll || show1099) {
