@@ -172,7 +172,8 @@ Example:
         const map = new Map();
         const row = sheet.getRow(rowIdx);
         row.eachCell((cell, colNumber) => {
-            const val = getVal(cell).toString().trim().toLowerCase();
+            // Aggressive Normalization: lower + remove all non-alphanumeric
+            const val = getVal(cell).toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
             map.set(val, colNumber);
         });
         return map;
@@ -184,7 +185,7 @@ Example:
 
     // Table 1: Category Info
     const colCategory = setupHeaders.get('category');
-    const colSubCategory = setupHeaders.get('sub-category') || setupHeaders.get('subcategory');
+    const colSubCategory = setupHeaders.get('subcategory') || setupHeaders.get('sub-category'); // Normalized 'subcategory' is handled by regex above
     const colType = setupHeaders.get('type');
     const colReport = setupHeaders.get('report');
 
@@ -192,30 +193,31 @@ Example:
     const colVendor = setupHeaders.get('vendors') || setupHeaders.get('vendor');
 
     // Additional Vendor Columns for 1099
-    const colBusiness = setupHeaders.get('business name') || setupHeaders.get('business');
-    const colName = setupHeaders.get('name') || setupHeaders.get('full name');
-    const colSSN = setupHeaders.get('ssn') || setupHeaders.get('ein') || setupHeaders.get('tax id');
+    // Normalized keys: 'businessname', 'fullname', 'taxid'...
+    const colBusiness = setupHeaders.get('businessname') || setupHeaders.get('business');
+    const colName = setupHeaders.get('name') || setupHeaders.get('fullname');
+    const colSSN = setupHeaders.get('ssn') || setupHeaders.get('ein') || setupHeaders.get('taxid') || setupHeaders.get('tin');
     const colAddress = setupHeaders.get('address');
     const colEmail = setupHeaders.get('email');
     const colPhone = setupHeaders.get('phone');
 
-    const finalCol1099 = setupHeaders.get('1099') || setupHeaders.get('1099-nec');
-    // New Split Columns: "1099 Type" and "1099 Required"
-    const col1099Type = setupHeaders.get('1099 type');
-    const col1099Req = setupHeaders.get('1099 required');
+    const finalCol1099 = setupHeaders.get('1099') || setupHeaders.get('1099nec');
+    // New Split Columns: "1099 Type" -> "1099type", "1099 Required" -> "1099required"
+    const col1099Type = setupHeaders.get('1099type');
+    const col1099Req = setupHeaders.get('1099required');
 
     // Table 3: Customers
     const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
 
     // Table 4: Sheet Info
-    const colSheetName = setupHeaders.get('sheet name (config)') || setupHeaders.get('sheet name');
-    const colSheetType = setupHeaders.get('account type') || setupHeaders.get('sheet type');
-    const colFlip = setupHeaders.get('flip polarity? (yes/no)') || setupHeaders.get('flip polarity?') || setupHeaders.get('flip');
-    const colOffset = setupHeaders.get('header row') || setupHeaders.get('offset');
+    const colSheetName = setupHeaders.get('sheetnameconfig') || setupHeaders.get('sheetname');
+    const colSheetType = setupHeaders.get('accounttype') || setupHeaders.get('sheettype');
+    const colFlip = setupHeaders.get('flippolarityyesno') || setupHeaders.get('flippolarity') || setupHeaders.get('flip');
+    const colOffset = setupHeaders.get('headerrow') || setupHeaders.get('offset');
 
     // Table 5: Payer Info (Vertical Key-Value)
-    // We look for a header "Company Info" or "Payer Info" and assume the next column is Value
-    let colPayerKey = setupHeaders.get('company info') || setupHeaders.get('payer info') || setupHeaders.get('company name');
+    // "Company Info" -> "companyinfo", "Payer Info" -> "payerinfo"
+    let colPayerKey = setupHeaders.get('companyinfo') || setupHeaders.get('payerinfo') || setupHeaders.get('companyname');
     let colPayerValue = colPayerKey ? colPayerKey + 1 : null;
     // If strict "Key" / "Value" headers exist, use them? No, user said "two columns". We assume Key Col -> Value Col.
 
