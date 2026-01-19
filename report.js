@@ -881,11 +881,20 @@ Example:
 
             reports.vendors.forEach(r => {
                 const info = vendor1099Map.get(r.label.toLowerCase()) || { type: '', req: '' };
+
+                // Determine if vendor actually qualifies for 1099 reporting
+                let displayReq = '';
+                if (info.type) {
+                    const threshold = info.type === 'INT' ? 0 : 600; // INT has $0 threshold, NEC has $600
+                    const meetsThreshold = r.value > 0 && r.value >= threshold;
+                    displayReq = meetsThreshold ? 'YES' : '';
+                }
+
                 console.log(
                     `${r.label.substring(0, 29).padEnd(30)}` +
                     `${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}` +
                     `  ${(info.type || '').padEnd(12)}` +
-                    `${(info.req || '').padEnd(10)}`
+                    `${displayReq.padEnd(10)}`
                 );
             });
         }
