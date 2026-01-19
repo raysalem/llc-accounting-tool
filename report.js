@@ -624,7 +624,10 @@ Example:
                 if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
 
                 const displayVendor = validVendors.get(vLower) || vStr;
-                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + amount;
+                // Standardize: Expenses are Positive. Income is Negative.
+                // Current 'amount' logic: Expenses are Negative. So flip it.
+                const vendAmount = amount * -1;
+                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + vendAmount;
 
                 const is1099 = vendor1099Map.get(vLower);
                 if (is1099) {
@@ -633,7 +636,7 @@ Example:
                     if (!vendor1099Stats[t][displayVendor]) {
                         vendor1099Stats[t][displayVendor] = 0;
                     }
-                    vendor1099Stats[t][displayVendor] += amount;
+                    vendor1099Stats[t][displayVendor] += vendAmount;
                 }
             }
             if (customerVal) {
@@ -909,18 +912,17 @@ Example:
         const csvRows = [];
         all1099.forEach(r => {
             // Polarity Logic: 
-            // - Threshold Check: Must use ABS (e.g. |-737| > 600).
-            // - Output Value: User requests SIGNED value (e.g. -737.50).
-            // - Filter: Only Net Expenses (Negative Values). Positive values (Income) are 0 -> Less than threshold -> Dropped.
+            // - Value is now POSITIVE for Expenses.
+            // - Threshold Check: Value > Threshold.
+            // - Filter: Only Net Expenses (Positive Values).
 
-            const absVal = Math.abs(r.value);
-            const isExpense = r.value < 0; // Net Payment
+            const isExpense = r.value > 0; // Net Payment
 
-            if (isExpense && absVal >= r.threshold) {
+            if (isExpense && r.value >= r.threshold) {
                 const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
                 csvRows.push({
                     ...d,
-                    amount: absVal, // Positive value for IRS
+                    amount: r.value, // Positive value for IRS
                     form: r.form
                 });
             }
