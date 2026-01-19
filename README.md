@@ -71,7 +71,8 @@ The tool validates every transaction during the report generation process:
 - **Offset Verification**: Automatically warns if the row immediately following your configured header offset looks like a header itself.
 - **Master Lists**: Cross-references against categories, vendors, and customers defined in the Setup tab.
 - **Illegal Values**: Highlights entries using undefined categories or unknown vendors.
-- `--1099`: Generate 1099-NEC/INT reports for enabled vendors.
+- `--1099`: Generate 1099-NEC/INT reports for enabled vendors. This functionality uses standard "Positive Money Paid" polarity (e.g. $50,000 paid is 50000) and filters for Net Expenses only, ignoring refunds.
+- `--vendor`: Generates a spending report for all vendors, showing total net payments (Expenses as Positive) and 1099 status.
 - **Missing Data**: Flags transactions that are missing a category assignment.
 - **Reporting**: Issues are summarized in red at the bottom of the **Summary** tab and printed to the console.
 - **Deep Dive**: Use the `--checker` flag for specific row numbers and descriptions of every error.

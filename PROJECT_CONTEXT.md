@@ -14,6 +14,10 @@ The tool is a collection of Node.js scripts that interface with Excel (`.xlsx`) 
     -   **Normalization**: Flips polarities based on "Flip Polarity?" config in the Setup sheet.
     -   **Ledger Integration**: If a Ledger category name matches a Sheet Name or its `Account Type` (Setup Col 2), the impact is added to that account's calculated balance.
     -   **Validation**: Performs a multi-pass scan for uncategorized rows, rows missing dates, or "illegal" entries.
+    -   **Vendor/1099 Logic**: 
+        -   Calculates "Net Spending" per vendor. 
+        -   **Polarity**: For Vendor/1099 reports, "Money Paid" (Expense) is treated as **Positive**. Income/Refunds are treated as **Negative**.
+        -   1099 Reports filter for Net Expenses > $0 and generate a CSV using the **Payer Info** defined in the Setup sheet.
     -   **Reporting**: Writes calculated totals to the Summary sheet and console.
 
 ## Internal Data Mappings
