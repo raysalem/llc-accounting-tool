@@ -274,8 +274,13 @@ Example:
             // Legacy/Combined Column logic fallback
             if (!type && !req && finalCol1099) {
                 const unknownVal = getVal(row.getCell(finalCol1099)).toString().trim().toUpperCase();
-                if (unknownVal === 'NEC' || unknownVal === 'INT') type = unknownVal;
-                else if (unknownVal === 'YES' || unknownVal === 'Y') type = 'NEC'; // Default to NEC
+                if (unknownVal === 'NEC' || unknownVal === 'INT') {
+                    type = unknownVal;
+                    req = 'YES'; // Legacy column with type implies required
+                } else if (unknownVal === 'YES' || unknownVal === 'Y') {
+                    type = 'NEC'; // Default to NEC
+                    req = 'YES';
+                }
             }
 
             // Determine final status
