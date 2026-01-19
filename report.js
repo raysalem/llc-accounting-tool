@@ -759,9 +759,7 @@ Example:
         }
     }
     // Helper: 1099 Detail Printer
-    const print1099 = (type, list) => {
-        const threshold = 600;
-
+    const print1099 = (type, list, threshold) => {
         if (!list || list.length === 0) {
             if (show1099 && showChecker) console.log(`\n(No 1099-${type} tagged vendors found with activity)`);
             return;
@@ -772,12 +770,16 @@ Example:
         const skipped = [];
 
         list.forEach(r => {
-            if (r.value >= threshold) {
+            // Polarity: Convert to positive (Absolute value to capture magnitude of spending)
+            const val = Math.abs(r.value);
+
+            if (val >= threshold) {
                 const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
                 let finalName = d.name || d.business || r.label;
-                qual.push({ ...r, ...d, displayName: finalName });
+                // Store positive value for display
+                qual.push({ ...r, ...d, displayName: finalName, value: val });
             } else {
-                skipped.push(r);
+                skipped.push({ ...r, value: val });
             }
         });
 
@@ -809,14 +811,16 @@ Example:
             console.log('-'.repeat(h.length));
         }
 
+        /*
         if (skipped.length > 0 && show1099) {
-            console.log(`\n(Skipped ${skipped.length} 1099-${type} vendors under $${threshold}: ${skipped.map(s => `${s.label} ($${s.value.toFixed(2)})`).join(', ')})`);
+             console.log(`\n(Skipped ${skipped.length} 1099-${type} vendors under $${threshold}: ${skipped.map(s => `${s.label} ($${s.value.toFixed(2)})`).join(', ')})`);
         }
+        */
     };
 
     if (showAll || show1099) {
-        print1099('NEC', reports.vendors1099NEC);
-        print1099('INT', reports.vendors1099INT);
+        print1099('NEC', reports.vendors1099NEC, 600);
+        print1099('INT', reports.vendors1099INT, 0);
     }
     if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
 
