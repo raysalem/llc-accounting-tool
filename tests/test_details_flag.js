@@ -5,7 +5,7 @@ console.log('--- TEST: --details Flag Support ---');
 try {
     // Requires the test file "tests/temp_target.xlsx" to exist (created in previous tests)
     // We will query for 'Office Supplies' which should exist in the standard template logic
-    const cmd = `node update_financials.js "tests/temp_target.xlsx" --details "office supplies"`;
+    const cmd = `node report.js "tests/temp_target.xlsx" --details "office supplies"`;
     console.log(`Running: ${cmd}`);
     const output = execSync(cmd).toString();
     console.log(output);

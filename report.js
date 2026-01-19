@@ -36,6 +36,7 @@ async function updateFinancials() {
     const showCustomer = args.includes('--customer');
     const showPLSub = args.includes('--pl-sub');
     const showChecker = args.includes('--checker');
+    const show1099 = args.includes('--1099-nec') || args.includes('--1099');
 
     // Parse --details <Category>
     const detailsIndex = args.indexOf('--details');
@@ -45,7 +46,7 @@ async function updateFinancials() {
     // Help Menu
     if (args.includes('--help')) {
         console.log(`
-Usage: node update_financials.js [filename] [flags]
+Usage: node report.js [filename] [flags]
 
 Description:
   Updates the financial accounting spreadsheet. It reads the Setup, Ledger, and Transaction sheets,
@@ -65,16 +66,17 @@ Flags:
   --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
   --vendor        (Optional) Print spending statistics by Vendor.
   --customer      (Optional) Print income statistics by Customer.
+  --1099-nec      (Optional) Generate a 1099-NEC report summing payments to enabled vendors.
   --details "Cat" (Optional) List all transactions for a specific Category (e.g., --details "Office Supplies").
 
 Example:
-  node update_financials.js "My_Books_2025.xlsx" --pl --checker --save
+  node report.js "My_Books_2025.xlsx" --pl --checker --save
         `);
         return;
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--checker', '--details', '--help'
+        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--checker', '--details', '--help', '--1099-nec', '--1099'
     ];
 
     // Check for unknown arguments
@@ -85,7 +87,7 @@ Example:
         process.exit(1);
     }
 
-    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker || showDetails;
+    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker || showDetails || show1099;
     const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
@@ -125,12 +127,14 @@ Example:
     // --- State ---
     const validCategories = new Set(); // Stores lowercase for validation
     const validVendors = new Map();    // Maps lower -> Display Name
+    const vendor1099Map = new Map();   // Maps lower -> 'NEC' | 'INT'
     const validCustomers = new Map();  // Maps lower -> Display Name
     const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
     const sheetConfigs = [];
 
     const catStats = {};
     const vendorStats = {};
+    const vendor1099Stats = { NEC: {}, INT: {} };
     const customerStats = {};
     let bankTotal = 0;
     let ccTotal = 0;
@@ -184,6 +188,11 @@ Example:
 
     // Table 2: Vendors
     const colVendor = setupHeaders.get('vendors') || setupHeaders.get('vendor');
+    const col1099 = setupHeaders.get('1099'); // Strict '1099'. If user put '1099-nec', we want them to rename or aliasing here.
+    // User requested "rename column as 1099-nec as 1099". So we look for 1099.
+    // We will support 1099-nec as legacy fallback in case they didn't rename yet, but prefer 1099.
+    const col1099Fallback = setupHeaders.get('1099-nec');
+    const finalCol1099 = col1099 || col1099Fallback;
 
     // Table 3: Customers
     const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
@@ -227,7 +236,21 @@ Example:
         const vendor = colVendor ? getVal(row.getCell(colVendor)) : null;
         if (vendor) {
             const vRaw = vendor.toString().trim();
-            validVendors.set(vRaw.toLowerCase(), vRaw);
+            const lowerV = vRaw.toLowerCase();
+            validVendors.set(lowerV, vRaw);
+            if (showChecker && validVendors.size % 50 === 0) console.log(`... Loaded ${validVendors.size} vendors so far ...`);
+
+
+            if (finalCol1099) {
+                const val1099 = getVal(row.getCell(finalCol1099)).toString().trim().toUpperCase();
+                // Check against known 1099 types: NEC or INT
+                // Also support "YES" -> default to NEC for backward compatibility
+                if (val1099 === 'NEC' || val1099 === 'INT') {
+                    vendor1099Map.set(lowerV, val1099);
+                } else if (val1099 === 'YES' || val1099 === 'Y') {
+                    vendor1099Map.set(lowerV, 'NEC');
+                }
+            }
         }
 
         // 3. Process Customer Table
@@ -237,6 +260,8 @@ Example:
             validCustomers.set(cRaw.toLowerCase(), cRaw);
         }
     });
+    if (showChecker) console.log(`[Setup] Loaded ${validVendors.size} Valid Vendors, ${validCustomers.size} Customers, ${validCategories.size} Categories.`);
+
 
     // --- Pass 2: Read Sheet Configurations & Link ---
     setupSheet.eachRow((row, rowNumber) => {
@@ -311,11 +336,11 @@ Example:
     // --- Constants for Column Headers ---
     const HEADERS = {
         DATE: ['date', 'txn date', 'transaction date'],
-        DESC: ['description', 'desc', 'payee', 'merchant', 'name'],
+        DESC: ['description', 'desc', 'payee', 'name'],
         AMOUNT: ['amount', 'amt', 'value'],
         CATEGORY: ['category', 'cat', 'account_category'],
         SUBCAT: ['sub-category', 'sub-cat', 'subcategory', 'subcat'],
-        VENDOR: ['vendor', 'vend', 'merchant name'],
+        VENDOR: ['vendor', 'vend', 'merchant', 'merchant name'],
         CUSTOMER: ['customer', 'cust', 'client'],
         DEBIT: ['debit', 'dr', 'withdrawal'],
         CREDIT: ['credit', 'cr', 'deposit']
@@ -381,6 +406,10 @@ Example:
             else if (findCol(val, HEADERS.VENDOR)) map.vendor = colNumber;
             else if (findCol(val, HEADERS.CUSTOMER)) map.customer = colNumber;
         });
+
+        if (showChecker) {
+            if (!map.vendor) console.warn(`  [!] WARNING: No Vendor column found for sheet "${sheet.name}". 'Unknown Vendor' checks will be skipped for this sheet.`);
+        }
 
         if (showChecker) {
             console.log(`\nProcessing "${sheet.name}":`);
@@ -461,6 +490,11 @@ Example:
 
                 const displayVendor = validVendors.get(vLower) || vStr;
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + amount;
+
+                if (vendor1099Map.has(vLower)) {
+                    const type = vendor1099Map.get(vLower);
+                    vendor1099Stats[type][displayVendor] = (vendor1099Stats[type][displayVendor] || 0) + amount;
+                }
             }
             if (customerVal) {
                 const cStr = customerVal.toString().trim();
@@ -591,7 +625,13 @@ Example:
 
                 const displayVendor = validVendors.get(vLower) || vStr;
                 // Vendor: Net Debit (Expense)
-                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + (dr - cr);
+                const impactVal = (dr - cr);
+                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + impactVal;
+
+                if (vendor1099Map.has(vLower)) {
+                    const type = vendor1099Map.get(vLower);
+                    vendor1099Stats[type][displayVendor] = (vendor1099Stats[type][displayVendor] || 0) + impactVal;
+                }
             }
             if (customerVal) {
                 const cStr = customerVal.toString().trim();
@@ -640,6 +680,9 @@ Example:
 
     // Prepare Vendor / Customer Reports
     reports.vendors = Object.keys(vendorStats).map(v => ({ label: v, value: vendorStats[v] })).sort((a, b) => b.value - a.value);
+    reports.vendors1099NEC = Object.keys(vendor1099Stats.NEC).map(v => ({ label: v, value: vendor1099Stats.NEC[v] })).sort((a, b) => b.value - a.value);
+    reports.vendors1099INT = Object.keys(vendor1099Stats.INT).map(v => ({ label: v, value: vendor1099Stats.INT[v] })).sort((a, b) => b.value - a.value);
+    reports.customers = Object.keys(customerStats).map(c => ({ label: c, value: customerStats[c] })).sort((a, b) => b.value - a.value);
     reports.customers = Object.keys(customerStats).map(c => ({ label: c, value: customerStats[c] })).sort((a, b) => b.value - a.value);
 
     // --- 5. Console Output ---
@@ -672,7 +715,22 @@ Example:
         console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`);
     }
     if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
-    if (showAll || showVendor) printSection('VENDOR SPENDING', reports.vendors);
+    if (showAll || showVendor) {
+        printSection('VENDOR SPENDING', reports.vendors);
+        // Explicitly warn about unknown vendors if requested
+        if (illegalVendors.length > 0) {
+            console.log(`\n[!] WARNING: ${illegalVendors.length} transactions have unknown Vendors.`);
+            const uniqueUnknown = Array.from(new Set(illegalVendors.map(i => i.value)));
+            console.log(`    Unknown Vendors: ${uniqueUnknown.join(', ')}`);
+        }
+    }
+    if (showAll || show1099) {
+        if (reports.vendors1099NEC.length > 0) printSection('1099-NEC REPORT', reports.vendors1099NEC);
+        if (reports.vendors1099INT.length > 0) printSection('1099-INT REPORT', reports.vendors1099INT);
+        if (!reports.vendors1099NEC.length && !reports.vendors1099INT.length && show1099) {
+            console.log('\n--- 1099 REPORT ---\n(No 1099 transactions found)');
+        }
+    }
     if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
 
     if (showDetails) {

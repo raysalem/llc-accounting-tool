@@ -94,7 +94,7 @@ async function testArguments() {
     // =========================================================================
     // PART 2: update_financials.js Coverage
     // =========================================================================
-    console.log('\n[2/4] update_financials.js (Flags)');
+    console.log('\n[2/4] report.js (Flags)');
 
     // Setup: Modify Target to have Vendors/Customers for testing
     // Row 4 is our data row.
@@ -107,14 +107,14 @@ async function testArguments() {
 
     // 5. Test: --vendor
     console.log('   Running: --vendor');
-    const vendorOut = run(`node update_financials.js "${TARGET_FILE}" --vendor`);
+    const vendorOut = run(`node report.js "${TARGET_FILE}" --vendor`);
     if (!vendorOut.includes('VENDOR SPENDING') || !vendorOut.includes('TestVendor')) {
         throw new Error('--vendor flag failed to show vendor report');
     }
 
     // 6. Test: --customer
     console.log('   Running: --customer');
-    const custOut = run(`node update_financials.js "${TARGET_FILE}" --customer`);
+    const custOut = run(`node report.js "${TARGET_FILE}" --customer`);
     if (!custOut.includes('CUSTOMER INCOME') || !custOut.includes('TestCust')) {
         throw new Error('--customer flag failed to show customer report');
     }
@@ -126,7 +126,7 @@ async function testArguments() {
     sheet.getRow(4).getCell(5).value = 'Software'; // Sub-Category
     await wb.xlsx.writeFile(TARGET_FILE);
 
-    const plSubOut = run(`node update_financials.js "${TARGET_FILE}" --pl-sub`);
+    const plSubOut = run(`node report.js "${TARGET_FILE}" --pl-sub`);
     if (!plSubOut.includes('PROFIT & LOSS') || !plSubOut.includes('> Software')) {
         console.error('--- FAILURE OUTPUT START ---');
         console.error(plSubOut);
@@ -137,7 +137,7 @@ async function testArguments() {
 
     // 7. Test: --save (Check Summary Tab)
     console.log('   Running: --save');
-    run(`node update_financials.js "${TARGET_FILE}" --save`);
+    run(`node report.js "${TARGET_FILE}" --save`);
 
     // Verify File Change
     const finalWb = new ExcelJS.Workbook();
@@ -147,8 +147,8 @@ async function testArguments() {
     if (summary.getCell('A3').value !== 'Profit & Loss') throw new Error('Summary tab content invalid');
 
     // 8. Test: --help
-    const upHelp = run('node update_financials.js --help');
-    if (!upHelp.includes('Usage: node update_financials.js')) throw new Error('update_financials --help failed');
+    const upHelp = run('node report.js --help');
+    if (!upHelp.includes('Usage: node report.js')) throw new Error('report.js --help failed');
 
     console.log('\n✅ TEST PASSED: All arguments covered and verified.');
 

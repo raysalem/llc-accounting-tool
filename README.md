@@ -105,9 +105,9 @@ The tool validates every transaction during the report generation process:
 3. **Import Transactions**:
    Use `load_transactions.js` to bring in your bank or CC data.
 4. **Update Financials**:
-   Run the update script to refresh the Summary and generate reports:
+   Run the report script to refresh the Summary and generate reports:
    ```bash
-   node update_financials.js
+   node report.js
    ```
 
 ## Running the Integration Test
@@ -132,7 +132,7 @@ This project uses **GitHub Actions** to ensure code quality. On every push or pu
 ## Key Scripts
 
 - `generate_excel.js`: Creates the initial boilerplate Excel structure.
-- `update_financials.js`: The main engine for calculating balances and generating reports.
+- `report.js`: The main engine for calculating balances and generating reports.
 - `load_transactions.js`: Handles importing data from external sources.
 - `inspect.js`: Consolidated utility for debugging and data validation.
 

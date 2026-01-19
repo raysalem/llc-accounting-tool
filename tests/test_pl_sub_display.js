@@ -51,10 +51,10 @@ async function verifySubCatLogic() {
     rows.forEach(r => sheet.addRow(r));
     await workbook.xlsx.writeFile(TEST_FILENAME);
 
-    console.log('--- Running update_financials.js --pl-sub ---');
+    console.log('--- Running report.js --pl-sub ---');
     let output = '';
     try {
-        output = execSync(`node update_financials.js "${TEST_FILENAME}" --pl-sub`, { encoding: 'utf-8' });
+        output = execSync(`node report.js "${TEST_FILENAME}" --pl-sub`, { encoding: 'utf-8' });
     } catch (e) {
         console.error('Execution Failed:', e.stdout);
         process.exit(1);
