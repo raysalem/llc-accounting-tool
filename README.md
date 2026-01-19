@@ -71,6 +71,7 @@ The tool validates every transaction during the report generation process:
 - **Offset Verification**: Automatically warns if the row immediately following your configured header offset looks like a header itself.
 - **Master Lists**: Cross-references against categories, vendors, and customers defined in the Setup tab.
 - **Illegal Values**: Highlights entries using undefined categories or unknown vendors.
+- `--1099`: Generate 1099-NEC/INT reports for enabled vendors.
 - **Missing Data**: Flags transactions that are missing a category assignment.
 - **Reporting**: Issues are summarized in red at the bottom of the **Summary** tab and printed to the console.
 - **Deep Dive**: Use the `--checker` flag for specific row numbers and descriptions of every error.
