@@ -59,4 +59,5 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 ### 4. Reflection (`4_reflection.md`)
 - **Review**: Did we solve the prompt?
 - **Quality**: Self-assessment of code quality and robustness.
+- **Rules Check**: Did I follow all predicate/rules accordingly? Were there conflicts in precedence? Are there any grey areas the user should be aware of?
 - **Next**: Operations or cleanup required.
