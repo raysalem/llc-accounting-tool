@@ -155,6 +155,10 @@ Example:
     const offsetWarnings = [];
     const duplicateCategories = []; // Track duplicate category definitions
 
+    // Track which report types (P&L vs BS) vendors/customers are used in
+    const vendorReportUsage = new Map(); // vendor -> Set of report types
+    const customerReportUsage = new Map(); // customer -> Set of report types
+
     // --- Helper ---
     function getVal(cell) {
         if (!cell) return '';
@@ -626,9 +630,13 @@ Example:
             if (!categoryVal && Math.abs(amount) > 0.01) {
                 if (pType === 'cc') uncategorizedCC++; else uncategorizedBank++;
                 uncategorizedDetails.push({ sheet: sheet.name, row: r, date: displayDate, desc: rawDesc });
-            } else if (categoryVal) {
+            }
+
+            // Define catLower for use in vendor/customer tracking
+            const catLower = categoryVal ? categoryVal.toString().trim().toLowerCase() : null;
+
+            if (categoryVal) {
                 const catStr = categoryVal.toString().trim();
-                const catLower = catStr.toLowerCase();
 
                 if (!validCategories.has(catLower)) {
                     illegalCategories.push({ value: catStr, sheet: sheet.name, row: r, date: displayDate });
@@ -682,6 +690,15 @@ Example:
                 const vendAmount = amount * -1;
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + vendAmount;
 
+                // Track which report type this vendor is used in
+                const catConf = uniqueCategories.get(catLower);
+                if (catConf && catConf.report) {
+                    if (!vendorReportUsage.has(displayVendor)) {
+                        vendorReportUsage.set(displayVendor, new Set());
+                    }
+                    vendorReportUsage.get(displayVendor).add(catConf.report);
+                }
+
                 const is1099 = vendor1099Map.get(vLower);
                 if (is1099) {
                     const t = (is1099.type || 'NEC');
@@ -699,6 +716,15 @@ Example:
 
                 const displayCustomer = validCustomers.get(cLower) || cStr;
                 customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + amount;
+
+                // Track which report type this customer is used in
+                const catConf = uniqueCategories.get(catLower);
+                if (catConf && catConf.report) {
+                    if (!customerReportUsage.has(displayCustomer)) {
+                        customerReportUsage.set(displayCustomer, new Set());
+                    }
+                    customerReportUsage.get(displayCustomer).add(catConf.report);
+                }
             }
         });
 
@@ -1142,6 +1168,49 @@ Example:
         console.log('1. Open the Excel file and go to the Setup tab');
         console.log('2. Find all rows for the conflicting category');
         console.log('3. Ensure ALL rows have the SAME value in the Report column (either all "P&L" or all "BS")');
+    }
+
+    // Check for vendors/customers used in both P&L and BS
+    const mixedVendors = [];
+    const mixedCustomers = [];
+
+    vendorReportUsage.forEach((reports, vendor) => {
+        if (reports.size > 1) {
+            mixedVendors.push({ name: vendor, reports: Array.from(reports) });
+        }
+    });
+
+    customerReportUsage.forEach((reports, customer) => {
+        if (reports.size > 1) {
+            mixedCustomers.push({ name: customer, reports: Array.from(reports) });
+        }
+    });
+
+    if (mixedVendors.length > 0 || mixedCustomers.length > 0) {
+        console.log('\n--- VENDOR/CUSTOMER REPORT TYPE CONFLICTS ---');
+        console.log('[!] The following vendors/customers are used in BOTH P&L and Balance Sheet categories.');
+        console.log('[!] This usually indicates a data entry error.');
+        console.log('[!] Vendors/customers should typically only appear in one report type.\n');
+
+        if (mixedVendors.length > 0) {
+            console.log('Vendors with mixed usage:');
+            mixedVendors.forEach(v => {
+                console.log(`  "${v.name}" appears in: ${v.reports.join(' and ')}`);
+            });
+        }
+
+        if (mixedCustomers.length > 0) {
+            if (mixedVendors.length > 0) console.log('');
+            console.log('Customers with mixed usage:');
+            mixedCustomers.forEach(c => {
+                console.log(`  "${c.name}" appears in: ${c.reports.join(' and ')}`);
+            });
+        }
+
+        console.log('\nTo fix:');
+        console.log('1. Review your transactions for these vendors/customers');
+        console.log('2. Ensure they are categorized consistently (all P&L or all BS)');
+        console.log('3. If legitimately needed in both, consider using different vendor/customer names');
     }
 
     if (offsetWarnings.length) {
