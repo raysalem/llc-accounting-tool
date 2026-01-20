@@ -37,7 +37,7 @@ async function updateFinancials() {
     const showPLSub = args.includes('--pl-sub');
     const showBSSub = args.includes('--bs-sub');
     const showChecker = args.includes('--checker');
-    const show1099 = args.includes('--1099') || args.includes('--1099-nec'); // Support both, prefer --1099
+    const show1099 = args.includes('--1099')
 
     // Parse --details <Category>
     const detailsIndex = args.indexOf('--details');
@@ -156,8 +156,9 @@ Example:
     const duplicateCategories = []; // Track duplicate category definitions
 
     // Track which report types (P&L vs BS) vendors/customers are used in
-    const vendorReportUsage = new Map(); // vendor -> Set of report types
-    const customerReportUsage = new Map(); // customer -> Set of report types
+    // Structure: Map<vendor, Map<reportType, Array<{sheet, row, category, date}>>>
+    const vendorReportUsage = new Map();
+    const customerReportUsage = new Map();
 
     // --- Helper ---
     function getVal(cell) {
@@ -691,12 +692,27 @@ Example:
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + vendAmount;
 
                 // Track which report type this vendor is used in
-                const catConf = uniqueCategories.get(catLower);
-                if (catConf && catConf.report) {
-                    if (!vendorReportUsage.has(displayVendor)) {
-                        vendorReportUsage.set(displayVendor, new Set());
+                if (catLower) {
+                    const catConf = uniqueCategories.get(catLower);
+                    if (catConf && catConf.report) {
+                        if (!vendorReportUsage.has(displayVendor)) {
+                            vendorReportUsage.set(displayVendor, new Map());
+                        }
+                        const reportMap = vendorReportUsage.get(displayVendor);
+                        if (!reportMap.has(catConf.report)) {
+                            reportMap.set(catConf.report, []);
+                        }
+                        // Store first 2 examples per report type
+                        const displayCat = catConf.displayName || categoryVal.toString().trim();
+                        if (reportMap.get(catConf.report).length < 2) {
+                            reportMap.get(catConf.report).push({
+                                sheet: sheet.name,
+                                row: r,
+                                category: displayCat,
+                                date: displayDate
+                            });
+                        }
                     }
-                    vendorReportUsage.get(displayVendor).add(catConf.report);
                 }
 
                 const is1099 = vendor1099Map.get(vLower);
@@ -718,12 +734,27 @@ Example:
                 customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + amount;
 
                 // Track which report type this customer is used in
-                const catConf = uniqueCategories.get(catLower);
-                if (catConf && catConf.report) {
-                    if (!customerReportUsage.has(displayCustomer)) {
-                        customerReportUsage.set(displayCustomer, new Set());
+                if (catLower) {
+                    const catConf = uniqueCategories.get(catLower);
+                    if (catConf && catConf.report) {
+                        if (!customerReportUsage.has(displayCustomer)) {
+                            customerReportUsage.set(displayCustomer, new Map());
+                        }
+                        const reportMap = customerReportUsage.get(displayCustomer);
+                        if (!reportMap.has(catConf.report)) {
+                            reportMap.set(catConf.report, []);
+                        }
+                        // Store first 2 examples per report type
+                        const displayCat = catConf.displayName || categoryVal.toString().trim();
+                        if (reportMap.get(catConf.report).length < 2) {
+                            reportMap.get(catConf.report).push({
+                                sheet: sheet.name,
+                                row: r,
+                                category: displayCat,
+                                date: displayDate
+                            });
+                        }
                     }
-                    customerReportUsage.get(displayCustomer).add(catConf.report);
                 }
             }
         });
@@ -869,9 +900,21 @@ Example:
                 const catConf = uniqueCategories.get(catLower);
                 if (catConf && catConf.report) {
                     if (!vendorReportUsage.has(displayVendor)) {
-                        vendorReportUsage.set(displayVendor, new Set());
+                        vendorReportUsage.set(displayVendor, new Map());
                     }
-                    vendorReportUsage.get(displayVendor).add(catConf.report);
+                    const reportMap = vendorReportUsage.get(displayVendor);
+                    if (!reportMap.has(catConf.report)) {
+                        reportMap.set(catConf.report, []);
+                    }
+                    // Store first 2 examples per report type
+                    if (reportMap.get(catConf.report).length < 2) {
+                        reportMap.get(catConf.report).push({
+                            sheet: 'Ledger',
+                            row: r,
+                            category: displayCat,
+                            date: displayDate
+                        });
+                    }
                 }
 
                 if (is1099) {
@@ -896,9 +939,21 @@ Example:
                 const catConf = uniqueCategories.get(catLower);
                 if (catConf && catConf.report) {
                     if (!customerReportUsage.has(displayCustomer)) {
-                        customerReportUsage.set(displayCustomer, new Set());
+                        customerReportUsage.set(displayCustomer, new Map());
                     }
-                    customerReportUsage.get(displayCustomer).add(catConf.report);
+                    const reportMap = customerReportUsage.get(displayCustomer);
+                    if (!reportMap.has(catConf.report)) {
+                        reportMap.set(catConf.report, []);
+                    }
+                    // Store first 2 examples per report type
+                    if (reportMap.get(catConf.report).length < 2) {
+                        reportMap.get(catConf.report).push({
+                            sheet: 'Ledger',
+                            row: r,
+                            category: displayCat,
+                            date: displayDate
+                        });
+                    }
                 }
             }
 
@@ -1192,15 +1247,15 @@ Example:
     const mixedVendors = [];
     const mixedCustomers = [];
 
-    vendorReportUsage.forEach((reports, vendor) => {
-        if (reports.size > 1) {
-            mixedVendors.push({ name: vendor, reports: Array.from(reports) });
+    vendorReportUsage.forEach((reportMap, vendor) => {
+        if (reportMap.size > 1) {
+            mixedVendors.push({ name: vendor, reportMap });
         }
     });
 
-    customerReportUsage.forEach((reports, customer) => {
-        if (reports.size > 1) {
-            mixedCustomers.push({ name: customer, reports: Array.from(reports) });
+    customerReportUsage.forEach((reportMap, customer) => {
+        if (reportMap.size > 1) {
+            mixedCustomers.push({ name: customer, reportMap });
         }
     });
 
@@ -1213,7 +1268,15 @@ Example:
         if (mixedVendors.length > 0) {
             console.log('Vendors with mixed usage:');
             mixedVendors.forEach(v => {
-                console.log(`  "${v.name}" appears in: ${v.reports.join(' and ')}`);
+                const reportTypes = Array.from(v.reportMap.keys());
+                console.log(`\n  "${v.name}" appears in: ${reportTypes.join(' and ')}`);
+                // Show example rows for each report type
+                v.reportMap.forEach((examples, reportType) => {
+                    console.log(`    ${reportType} examples:`);
+                    examples.forEach(ex => {
+                        console.log(`      - [${ex.date}] ${ex.sheet} Row ${ex.row}: Category="${ex.category}"`);
+                    });
+                });
             });
         }
 
@@ -1221,7 +1284,15 @@ Example:
             if (mixedVendors.length > 0) console.log('');
             console.log('Customers with mixed usage:');
             mixedCustomers.forEach(c => {
-                console.log(`  "${c.name}" appears in: ${c.reports.join(' and ')}`);
+                const reportTypes = Array.from(c.reportMap.keys());
+                console.log(`\n  "${c.name}" appears in: ${reportTypes.join(' and ')}`);
+                // Show example rows for each report type
+                c.reportMap.forEach((examples, reportType) => {
+                    console.log(`    ${reportType} examples:`);
+                    examples.forEach(ex => {
+                        console.log(`      - [${ex.date}] ${ex.sheet} Row ${ex.row}: Category="${ex.category}"`);
+                    });
+                });
             });
         }
 
