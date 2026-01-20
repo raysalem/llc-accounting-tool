@@ -35,6 +35,7 @@ async function updateFinancials() {
     const showVendor = args.includes('--vendor');
     const showCustomer = args.includes('--customer');
     const showPLSub = args.includes('--pl-sub');
+    const showBSSub = args.includes('--bs-sub');
     const showChecker = args.includes('--checker');
     const show1099 = args.includes('--1099') || args.includes('--1099-nec'); // Support both, prefer --1099
 
@@ -64,6 +65,7 @@ Flags:
   --bs            Print the Balance Sheet to the console.
   --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
   --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
+  --bs-sub        (Optional) Print detailed Balance Sheet with sub-category breakdowns.
   --vendor        (Optional) Print spending statistics by Vendor.
   --customer      (Optional) Print income statistics by Customer.
   --1099          (Optional) Generate 1099-NEC and 1099-INT reports for enabled vendors.
@@ -76,7 +78,7 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--checker', '--details', '--help', '--1099', '--1099-nec'
+        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--bs-sub', '--checker', '--details', '--help', '--1099', '--1099-nec'
     ];
 
     // Check for unknown arguments
@@ -87,7 +89,7 @@ Example:
         process.exit(1);
     }
 
-    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showChecker || showDetails || show1099;
+    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showBSSub || showChecker || showDetails || show1099;
     const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
@@ -912,7 +914,27 @@ Example:
         }
         console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`);
     }
-    if (showAll || showBS) printSection('BALANCE SHEET', reports.bs);
+    if (showAll || showBS || showBSSub) {
+        console.log(`\n--- BALANCE SHEET ---`);
+        if (!reports.bs.length) console.log('(No Data)');
+        else {
+            const max = Math.max(...reports.bs.map(r => r.label.length), 10);
+            reports.bs.forEach(r => {
+                console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                // Sub-Category Detail
+                if (showBSSub && catStats[r.label] && catStats[r.label].subCats) {
+                    const subs = catStats[r.label].subCats;
+                    const subKeys = Object.keys(subs).filter(k => Math.abs(subs[k]) > 0.01);
+                    if (!(subKeys.length === 1 && subKeys[0] === '(No Sub-Cat)')) {
+                        subKeys.sort().forEach(sub => {
+                            console.log(`   > ${sub.padEnd(max + 1)} : ${subs[sub].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                        });
+                    }
+                }
+            });
+        }
+        console.log('');
+    }
     if (showAll || showVendor) {
         // printSection('VENDOR SPENDING', reports.vendors); <-- Replacing with Detailed Table
         console.log(`\n--- VENDOR SPENDING ---`);
