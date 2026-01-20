@@ -786,9 +786,13 @@ Example:
     }
 
     // --- 3. Process Ledger ---
+    // Find Ledger configuration from Setup
+    const ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'ledger');
+    const ledgerHeaderRow = ledgerConfig ? (ledgerConfig.offset || 1) : 1;
+
     // Dynamic Mapping for Ledger
     const ledgerMap = { date: null, desc: null, category: null, subCat: null, vendor: null, customer: null, dr: null, cr: null };
-    const ledgerHeader = ledgerSheet.getRow(1);
+    const ledgerHeader = ledgerSheet.getRow(ledgerHeaderRow);
 
     ledgerHeader.eachCell((cell, colNumber) => {
         const val = getVal(cell);
@@ -803,7 +807,15 @@ Example:
         else if (findCol(val, HEADERS.CREDIT)) ledgerMap.cr = colNumber;
     });
 
-    // No default fallbacks - strict header matching required.
+    // Validate that critical headers were found
+    if (!ledgerMap.date || !ledgerMap.category) {
+        console.error(`\n[ERROR] Ledger sheet: Required headers not found at row ${ledgerHeaderRow}`);
+        console.error(`Expected headers: Date, Category (and optionally: Description, Debit, Credit, Vendor, Customer, Sub-Category)`);
+        console.error(`Found mapping: ${JSON.stringify(ledgerMap)}`);
+        console.error(`\nSetup sheet specifies Ledger header row at: ${ledgerHeaderRow}`);
+        console.error(`Please verify your Ledger sheet has proper headers at row ${ledgerHeaderRow}.`);
+        process.exit(1);
+    }
 
     if (showChecker) {
         console.log(`\nProcessing "Ledger":`);
@@ -811,7 +823,7 @@ Example:
     }
 
     ledgerSheet.eachRow((row, r) => {
-        if (r === 1) return;
+        if (r <= ledgerHeaderRow) return;
         const rawDate = ledgerMap.date ? getVal(row.getCell(ledgerMap.date)) : '';
         const rawDesc = ledgerMap.desc ? getVal(row.getCell(ledgerMap.desc)) : '';
         const cat = ledgerMap.category ? getVal(row.getCell(ledgerMap.category)) : '';
