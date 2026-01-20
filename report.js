@@ -178,20 +178,44 @@ Example:
         return (v === null || v === undefined) ? '' : v.toString().trim();
     }
 
-    function getHeaderMap(sheet, rowIdx = 1) {
-        const map = new Map();
-        const row = sheet.getRow(rowIdx);
-        row.eachCell((cell, colNumber) => {
-            // Aggressive Normalization: lower + remove all non-alphanumeric
-            const val = getVal(cell).toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-            map.set(val, colNumber);
+    // --- 1. Validate Required Named Tables in Setup Sheet ---
+    const REQUIRED_TABLES = ['CompanyInfo', 'Categories', 'Vendor', 'Customer', 'SheetInfo'];
+    const foundTables = [];
+    const missingTables = [];
+
+    // Check which tables exist
+    REQUIRED_TABLES.forEach(tableName => {
+        const table = setupSheet.getTable(tableName);
+        if (table) {
+            foundTables.push(tableName);
+        } else {
+            missingTables.push(tableName);
+        }
+    });
+
+    // ERROR if any tables are missing
+    if (missingTables.length > 0) {
+        console.error('\n[ERROR] Required Excel tables not found in Setup sheet');
+        console.error(`\nMissing tables: ${missingTables.join(', ')}`);
+        if (foundTables.length > 0) {
+            console.error(`Found tables: ${foundTables.join(', ')}`);
+        }
+        console.error('\nThe Setup sheet must have the following named Excel tables:');
+        REQUIRED_TABLES.forEach(name => {
+            console.error(`  - ${name}`);
         });
-        return map;
+        console.error('\nTo create a named table in Excel:');
+        console.error('1. Select the data range (including headers)');
+        console.error('2. Go to Insert > Table');
+        console.error('3. Check "My table has headers"');
+        console.error('4. Click OK');
+        console.error('5. In Table Design, set the Table Name to one of the names above');
+        process.exit(1);
     }
 
-    // --- 1. Read Setup (Decoupled Tables) ---
-    const setupHeaders = getHeaderMap(setupSheet, 1);
-    if (showChecker) console.log('Setup Headers:', Array.from(setupHeaders.keys()));
+    if (showChecker) {
+        console.log(`[Setup] Found all required tables: ${foundTables.join(', ')}`);
+    }
 
     // Table 1: Category Info
     const colCategory = setupHeaders.get('category');
@@ -789,6 +813,11 @@ Example:
     // Find Ledger configuration from Setup
     const ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'ledger');
     const ledgerHeaderRow = ledgerConfig ? (ledgerConfig.offset || 1) : 1;
+
+    if (showChecker) {
+        console.log(`\n[DEBUG] Ledger Config: ${JSON.stringify(ledgerConfig)}`);
+        console.log(`[DEBUG] Ledger Header Row: ${ledgerHeaderRow}`);
+    }
 
     // Dynamic Mapping for Ledger
     const ledgerMap = { date: null, desc: null, category: null, subCat: null, vendor: null, customer: null, dr: null, cr: null };
