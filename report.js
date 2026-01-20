@@ -153,6 +153,7 @@ Example:
     const uncategorizedDetails = [];
     const detailsRows = [];
     const offsetWarnings = [];
+    const duplicateCategories = []; // Track duplicate category definitions
 
     // --- Helper ---
     function getVal(cell) {
@@ -254,6 +255,17 @@ Example:
                 if (subCatStr) {
                     validSubCategories.add(subCatStr.toLowerCase());
                 }
+            }
+
+            // Detect duplicate category definitions
+            if (uniqueCategories.has(lower)) {
+                const existing = uniqueCategories.get(lower);
+                duplicateCategories.push({
+                    name: trimmed,
+                    row: rowNumber,
+                    newReport: report,
+                    existingReport: existing.report
+                });
             }
 
             uniqueCategories.set(lower, {
@@ -1113,6 +1125,21 @@ Example:
             const allUniqueVendors = Array.from(new Set(illegalVendors.map(x => x.value))).sort();
             allUniqueVendors.forEach(v => console.log(v));
         }
+    }
+
+    if (duplicateCategories.length) {
+        console.log('\n--- DUPLICATE CATEGORY WARNINGS ---');
+        console.log('[!] The following categories appear multiple times in your Setup sheet.');
+        console.log('[!] Only the FIRST occurrence is used. This may cause categories to appear in the wrong report.');
+        console.log('[!] RECOMMENDATION: Keep only ONE entry per category.\n');
+        duplicateCategories.forEach(d => {
+            console.log(`  "${d.name}" (Row ${d.row}): Trying to set Report="${d.newReport}", but already set to "${d.existingReport}"`);
+        });
+        console.log('\nTo fix:');
+        console.log('1. Open the Excel file and go to the Setup tab');
+        console.log('2. Find duplicate category entries');
+        console.log('3. Delete all but ONE entry for each category');
+        console.log('4. Ensure the remaining entry has the correct Report type (P&L or BS)');
     }
 
     if (offsetWarnings.length) {
