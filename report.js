@@ -581,6 +581,10 @@ Example:
             const rawDate = map.date ? getVal(row.getCell(map.date)) : '';
             const rawDesc = map.desc ? getVal(row.getCell(map.desc)).toString().toLowerCase() : '';
 
+            // Validate date is actually a Date object or valid date string
+            const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] :
+                (rawDate && typeof rawDate === 'string' ? rawDate : 'N/A');
+
             // Offset check
             if (r === config.offset + 1) {
                 const rowValues = row.values.map(v => (v ? v.toString().toLowerCase() : ''));
@@ -593,13 +597,14 @@ Example:
             if (rawDesc.includes('total') || rawDesc.includes('balance') || rawDesc.includes('sum')) return;
             if (!rawDate) return;
 
+            // Skip rows with invalid amounts (NaN after parsing)
+            if (isNaN(amount)) return;
+
             if (config.flip) amount *= -1;
 
             // Accumulate Sheet Total (Net Flow)
             sheetTotal += amount;
             if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
-
-            const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
 
             if (!categoryVal && Math.abs(amount) > 0.01) {
                 if (pType === 'cc') uncategorizedCC++; else uncategorizedBank++;
@@ -777,6 +782,21 @@ Example:
 
             // Ledger SubCat aggregation
             const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+
+            // Validate subcategory if one is provided
+            if (subCatVal && sName !== '(No Sub-Cat)') {
+                const sLower = sName.toLowerCase();
+                if (!validSubCategories.has(sLower)) {
+                    illegalSubCategories.push({
+                        value: sName,
+                        category: displayCat,
+                        sheet: 'Ledger',
+                        row: r,
+                        date: displayDate
+                    });
+                }
+            }
+
             catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + impact;
 
             // Capture Details
