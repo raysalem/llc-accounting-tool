@@ -132,6 +132,7 @@ Example:
     let payerInfo = {}; // Payer/Company Info Map
     const validCustomers = new Map();  // Maps lower -> Display Name
     const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
+    const validSubCategories = new Set(); // Set of all valid subcategories from Setup
     const sheetConfigs = [];
 
     const catStats = {};
@@ -146,6 +147,7 @@ Example:
     const illegalCategories = [];
     const illegalVendors = [];
     const illegalCustomers = [];
+    const illegalSubCategories = [];
     const uncategorizedDetails = [];
     const detailsRows = [];
     const offsetWarnings = [];
@@ -243,6 +245,15 @@ Example:
             const subCatVal = colSubCategory ? getVal(row.getCell(colSubCategory)) : '';
             const report = colReport ? getVal(row.getCell(colReport)) : '';
             validCategories.add(lower);
+
+            // Track valid subcategories
+            if (subCatVal) {
+                const subCatStr = subCatVal.toString().trim();
+                if (subCatStr) {
+                    validSubCategories.add(subCatStr.toLowerCase());
+                }
+            }
+
             uniqueCategories.set(lower, {
                 report,
                 accountType: typeVal,
@@ -608,6 +619,21 @@ Example:
                 catStats[displayCat].total += amount;
 
                 const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+
+                // Validate subcategory if one is provided
+                if (subCatVal && sName !== '(No Sub-Cat)') {
+                    const sLower = sName.toLowerCase();
+                    if (!validSubCategories.has(sLower)) {
+                        illegalSubCategories.push({
+                            value: sName,
+                            category: displayCat,
+                            sheet: sheet.name,
+                            row: r,
+                            date: displayDate
+                        });
+                    }
+                }
+
                 catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
 
                 // Capture Details
@@ -1007,14 +1033,15 @@ Example:
         }
     }
 
-    const hasIssues = uncategorizedDetails.length > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0;
+    const hasIssues = uncategorizedDetails.length > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0 || illegalSubCategories.length > 0;
     if (hasIssues) {
         console.log('\n--- DATA INTEGRITY ISSUES ---');
         const issueSheetsFound = new Set([
             ...uncategorizedDetails.map(x => x.sheet),
             ...illegalCategories.map(x => x.sheet),
             ...illegalVendors.map(x => x.sheet),
-            ...illegalCustomers.map(x => x.sheet)
+            ...illegalCustomers.map(x => x.sheet),
+            ...illegalSubCategories.map(x => x.sheet)
         ]);
         issueSheetsFound.forEach(s => {
             console.log(`\n>> Tab: ${s.toUpperCase()}`);
@@ -1026,12 +1053,15 @@ Example:
             if (vends.size) console.log(`  [!] Unknown Vendors: ${Array.from(vends).join(', ')}`);
             const custs = new Set(illegalCustomers.filter(x => x.sheet === s).map(x => x.value));
             if (custs.size) console.log(`  [!] Unknown Customers: ${Array.from(custs).join(', ')}`);
+            const subCats = new Set(illegalSubCategories.filter(x => x.sheet === s).map(x => x.value));
+            if (subCats.size) console.log(`  [!] Illegal Sub-Categories: ${Array.from(subCats).join(', ')}`);
 
             if (showChecker) {
                 uncat.forEach(x => console.log(`      - [${x.date}] Row ${x.row}: MISSING CATEGORY ("${x.desc}")`));
                 illegalCategories.filter(x => x.sheet === s).forEach(x => console.log(`      - [${x.date}] Row ${x.row}: ILLEGAL CATEGORY "${x.value}"`));
                 illegalVendors.filter(x => x.sheet === s).forEach(x => console.log(`      - [${x.date}] Row ${x.row}: UNKNOWN VENDOR "${x.value}"`));
                 illegalCustomers.filter(x => x.sheet === s).forEach(x => console.log(`      - [${x.date}] Row ${x.row}: UNKNOWN CUSTOMER "${x.value}"`));
+                illegalSubCategories.filter(x => x.sheet === s).forEach(x => console.log(`      - [${x.date}] Row ${x.row}: ILLEGAL SUB-CATEGORY "${x.value}" in category "${x.category}"`));
             }
         });
 
