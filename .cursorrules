@@ -101,6 +101,7 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 1. **Display vs Storage**: Separate what you STORE (configuration) from what you DISPLAY (business rules applied).
 2. **Threshold Checks**: Always check thresholds at display/output time, not just at storage time.
 3. **Legacy Support**: When supporting legacy columns, explicitly set ALL fields that new columns would provide.
+4. **Setup Sheet is Source of Truth**: The Setup sheet configuration is authoritative. NEVER circumvent it with "fuzzy logic" or auto-detection unless explicitly designed for that purpose. If Setup specifies a header row and headers aren't found there, ERROR and STOP - don't silently continue or search elsewhere.
 
 ### Before Concluding ANY Task
 - [ ] Did I run the exact command the user would run?
