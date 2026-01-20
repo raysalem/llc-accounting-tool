@@ -4,3 +4,4 @@ node_modules/
 !tests/Full_Accounting_Test_Case.xlsx
 .DS_Store
 .env
+.agent/tasks/*
