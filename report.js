@@ -257,15 +257,18 @@ Example:
                 }
             }
 
-            // Detect duplicate category definitions
+            // Detect CONFLICTING category definitions (same category, different Report type)
             if (uniqueCategories.has(lower)) {
                 const existing = uniqueCategories.get(lower);
-                duplicateCategories.push({
-                    name: trimmed,
-                    row: rowNumber,
-                    newReport: report,
-                    existingReport: existing.report
-                });
+                // Only warn if Report type conflicts (different subcategories with same category is VALID)
+                if (existing.report !== report) {
+                    duplicateCategories.push({
+                        name: trimmed,
+                        row: rowNumber,
+                        newReport: report,
+                        existingReport: existing.report
+                    });
+                }
             }
 
             uniqueCategories.set(lower, {
@@ -1128,18 +1131,17 @@ Example:
     }
 
     if (duplicateCategories.length) {
-        console.log('\n--- DUPLICATE CATEGORY WARNINGS ---');
-        console.log('[!] The following categories appear multiple times in your Setup sheet.');
-        console.log('[!] Only the FIRST occurrence is used. This may cause categories to appear in the wrong report.');
-        console.log('[!] RECOMMENDATION: Keep only ONE entry per category.\n');
+        console.log('\n--- CATEGORY REPORT TYPE CONFLICTS ---');
+        console.log('[!] The following categories have CONFLICTING Report types in your Setup sheet.');
+        console.log('[!] Multiple rows with the same category but DIFFERENT subcategories is VALID.');
+        console.log('[!] But all rows for a category must have the SAME Report type (P&L or BS).\n');
         duplicateCategories.forEach(d => {
-            console.log(`  "${d.name}" (Row ${d.row}): Trying to set Report="${d.newReport}", but already set to "${d.existingReport}"`);
+            console.log(`  "${d.name}" (Row ${d.row}): Trying to set Report="${d.newReport}", but earlier row set it to "${d.existingReport}"`);
         });
         console.log('\nTo fix:');
         console.log('1. Open the Excel file and go to the Setup tab');
-        console.log('2. Find duplicate category entries');
-        console.log('3. Delete all but ONE entry for each category');
-        console.log('4. Ensure the remaining entry has the correct Report type (P&L or BS)');
+        console.log('2. Find all rows for the conflicting category');
+        console.log('3. Ensure ALL rows have the SAME value in the Report column (either all "P&L" or all "BS")');
     }
 
     if (offsetWarnings.length) {
