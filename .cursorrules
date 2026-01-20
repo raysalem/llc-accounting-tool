@@ -91,6 +91,12 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
    - **Rule**: When changing a shared data structure, grep for ALL usages and update them.
    - **Rule**: Run integration tests after structural changes.
 
+4. **Incomplete Feature Application (2026-01-20)**: Added vendor/customer report tracking to Bank/CC loops but missed Ledger loop.
+   - **Pattern**: This happened TWICE (subcategory validation had same issue).
+   - **Rule**: When adding transaction processing features, GREP for all similar code locations: `grep -n "vendorStats\|customerStats" report.js`
+   - **Rule**: Explicitly verify feature applies to: Bank, CC, AND Ledger transaction loops.
+   - **Rule**: Add to reflection checklist: "Did I check ALL transaction processing loops (Bank, CC, Ledger)?"
+
 ### Implementation Patterns
 1. **Display vs Storage**: Separate what you STORE (configuration) from what you DISPLAY (business rules applied).
 2. **Threshold Checks**: Always check thresholds at display/output time, not just at storage time.
@@ -103,3 +109,4 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 - [ ] Did I test edge cases for any threshold/filter logic?
 - [ ] Did I create an automated test for new features?
 - [ ] Did I run the integration test suite?
+- [ ] **If modifying transaction processing**: Did I verify the change applies to Bank, CC, AND Ledger loops?
