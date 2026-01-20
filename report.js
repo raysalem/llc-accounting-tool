@@ -865,6 +865,15 @@ Example:
                 const impactVal = (dr - cr);
                 vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + impactVal;
 
+                // Track which report type this vendor is used in
+                const catConf = uniqueCategories.get(catLower);
+                if (catConf && catConf.report) {
+                    if (!vendorReportUsage.has(displayVendor)) {
+                        vendorReportUsage.set(displayVendor, new Set());
+                    }
+                    vendorReportUsage.get(displayVendor).add(catConf.report);
+                }
+
                 if (is1099) {
                     const t = (is1099.type || 'NEC');
                     if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
@@ -882,6 +891,15 @@ Example:
                 const displayCustomer = validCustomers.get(cLower) || cStr;
                 // Customer: Net Credit (Income)
                 customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + (cr - dr);
+
+                // Track which report type this customer is used in
+                const catConf = uniqueCategories.get(catLower);
+                if (catConf && catConf.report) {
+                    if (!customerReportUsage.has(displayCustomer)) {
+                        customerReportUsage.set(displayCustomer, new Set());
+                    }
+                    customerReportUsage.get(displayCustomer).add(catConf.report);
+                }
             }
 
             // (Integration block removed - handled via standard catStats logic)
