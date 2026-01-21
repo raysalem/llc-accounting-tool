@@ -892,11 +892,13 @@ Example:
 
             const conf = uniqueCategories.get(catLower);
 
-            // Default to P&L logic if report type isn't explicit, but check valid config first
-            // Standardize: Credit positive (+), Debit negative (-)
-            // P&L: Income (+), Expense (-)
-            // BS: Liability (+), Equity (+), Asset (-)
-            const impact = (cr - dr);
+            // Ledger Impact Calculation based on Account Type
+            // Assets: Debit increases (+), Credit decreases (-) → (dr - cr)
+            // Liabilities/Equity: Credit increases (+), Debit decreases (-) → (cr - dr)
+            // P&L: Income = Credit (+), Expense = Debit (-) → (cr - dr)
+            const accountType = conf?.accountType?.toLowerCase() || '';
+            const isAsset = accountType === 'asset';
+            const impact = isAsset ? (dr - cr) : (cr - dr);
 
             const displayCat = conf?.displayName || catStr;
 
