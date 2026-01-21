@@ -185,37 +185,41 @@ Example:
 
     // Check which tables exist
     REQUIRED_TABLES.forEach(tableName => {
-        const table = setupSheet.getTable(tableName);
-        if (table) {
-            foundTables.push(tableName);
-        } else {
+        try {
+            const table = setupSheet.getTable(tableName);
+            if (table && table.table) {
+                foundTables.push(tableName);
+            } else {
+                missingTables.push(tableName);
+            }
+        } catch (e) {
+            // Table doesn't exist
             missingTables.push(tableName);
         }
     });
 
     // ERROR if any tables are missing
     if (missingTables.length > 0) {
-        console.error('\n[ERROR] Required Excel tables not found in Setup sheet');
-        console.error(`\nMissing tables: ${missingTables.join(', ')}`);
-        if (foundTables.length > 0) {
-            console.error(`Found tables: ${foundTables.join(', ')}`);
-        }
-        console.error('\nThe Setup sheet must have the following named Excel tables:');
-        REQUIRED_TABLES.forEach(name => {
-            console.error(`  - ${name}`);
-        });
-        console.error('\nTo create a named table in Excel:');
-        console.error('1. Select the data range (including headers)');
-        console.error('2. Go to Insert > Table');
-        console.error('3. Check "My table has headers"');
-        console.error('4. Click OK');
-        console.error('5. In Table Design, set the Table Name to one of the names above');
+        console.error(`\n[ERROR] Setup sheet is missing required Excel table(s): ${missingTables.join(', ')}`);
         process.exit(1);
     }
 
     if (showChecker) {
         console.log(`[Setup] Found all required tables: ${foundTables.join(', ')}`);
     }
+
+    // TODO: Replace this with table-based reading once tables are created
+    // Temporary fallback: Keep old header-map logic for backward compatibility
+    function getHeaderMap(sheet, rowIdx = 1) {
+        const map = new Map();
+        const row = sheet.getRow(rowIdx);
+        row.eachCell((cell, colNumber) => {
+            const val = getVal(cell).toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            map.set(val, colNumber);
+        });
+        return map;
+    }
+    const setupHeaders = getHeaderMap(setupSheet, 1);
 
     // Table 1: Category Info
     const colCategory = setupHeaders.get('category');
