@@ -393,67 +393,71 @@ Example:
     if (showChecker) console.log(`[Setup] Loaded ${validVendors.size} Valid Vendors, ${validCustomers.size} Customers, ${validCategories.size} Categories.`);
 
 
-    // --- Pass 2: Read Sheet Configurations & Link ---
-    setupSheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
 
-        // 4. Process Sheet Info Table
-        const confSheetName = colSheetName ? getVal(row.getCell(colSheetName)) : null;
+    // --- Pass 2: Read Sheet Configurations from SheetInfo Table ---
+    const sheetInfoTable = setupSheet.getTable('SheetInfo');
+
+    if (showChecker) {
+        console.log('[DEBUG] SheetInfo table:', JSON.stringify(sheetInfoTable.table, null, 2));
+    }
+
+    // Parse table range to get row numbers
+    const tableRef = sheetInfoTable.table.tableRef;
+    const match = tableRef.match(/([A-Z]+)(\d+):([A-Z]+)(\d+)/);
+    const startRow = parseInt(match[2]) + 1; // Skip header
+    const endRow = parseInt(match[4]);
+    const startCol = match[1].charCodeAt(0) - 64; // Convert A->1, B->2, etc
+
+    for (let r = startRow; r <= endRow; r++) {
+        const row = setupSheet.getRow(r);
+        const confSheetName = getVal(row.getCell(startCol));
+        const confType = getVal(row.getCell(startCol + 1));
+        const confFlip = getVal(row.getCell(startCol + 2));
+        const confOffset = getVal(row.getCell(startCol + 3));
+
         if (confSheetName) {
-            const confType = colSheetType ? getVal(row.getCell(colSheetType)) : '';
-            const confFlip = colFlip ? getVal(row.getCell(colFlip)) : '';
-            const confOffset = colOffset ? getVal(row.getCell(colOffset)) : '';
+            const cType = confType ? confType.toString().trim() : '';
+            let link = null;
 
-            if (confSheetName && confType) {
-                const cType = confType.toString().trim();
-                let link = null;
+            // Try to find a linked GL Account based on "Account Type" match
+            for (const [catRaw, catData] of uniqueCategories.entries()) {
+                const catSub = catData.subCategory ? catData.subCategory.toLowerCase() : 'N/A';
+                const targetType = cType.toLowerCase();
 
-                // Try to find a linked GL Account based on "Account Type" match
-                // We match Sheet.Type (Col J) against Category.SubCategory (Col B) or Category.Type (Col C)
-                // or even Category.Name (Col A) for maximum flexibility.
-                for (const [catRaw, catData] of uniqueCategories.entries()) {
-                    const catSub = catData.subCategory ? catData.subCategory.toLowerCase() : 'N/A';
-                    const targetType = cType.toLowerCase();
-
-                    if (showChecker && cType === 'Bank') {
-                        // targeted debug
-                        console.log(`Checking Cat: "${catData.displayName}" | Sub: "${catSub}" vs Target: "${targetType}"`);
-                    }
-
-                    // Check 'Type' (Asset/Liability)
-                    if (catData.accountType && catData.accountType.toLowerCase() === targetType) {
-                        link = catData.displayName;
-                        break;
-                    }
-                    // Check 'Sub-Category' (Bank/General) - often used for 'Bank'
-                    if (catData.subCategory && catData.subCategory.toLowerCase() === targetType) {
-                        link = catData.displayName;
-                        break;
-                    }
-                    // Check exact Category Name match
-                    if (catData.displayName && catData.displayName.toLowerCase() === targetType) {
-                        link = catData.displayName;
-                        break;
-                    }
+                if (showChecker && cType === 'Bank') {
+                    console.log(`Checking Cat: "${catData.displayName}" | Sub: "${catSub}" vs Target: "${targetType}"`);
                 }
 
-                if (showChecker) {
-                    console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${link || 'NONE'}"`);
-                    if (!link) {
-                        console.log('Setup Headers:', JSON.stringify(Array.from(setupHeaders.keys())));
-                    }
+                // Check 'Type' (Asset/Liability)
+                if (catData.accountType && catData.accountType.toLowerCase() === targetType) {
+                    link = catData.displayName;
+                    break;
                 }
-
-                sheetConfigs.push({
-                    name: confSheetName.toString().trim(),
-                    type: cType,
-                    flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
-                    offset: parseInt(confOffset) || 0,
-                    linkedAccount: link
-                });
+                // Check 'Sub-Category' (Bank/General)
+                if (catData.subCategory && catData.subCategory.toLowerCase() === targetType) {
+                    link = catData.displayName;
+                    break;
+                }
+                // Check exact Category Name match
+                if (catData.displayName && catData.displayName.toLowerCase() === targetType) {
+                    link = catData.displayName;
+                    break;
+                }
             }
+
+            if (showChecker) {
+                console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${link || 'NONE'}"`);
+            }
+
+            sheetConfigs.push({
+                name: confSheetName.toString().trim(),
+                type: cType,
+                flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
+                offset: parseInt(confOffset) || 0,
+                linkedAccount: link
+            });
         }
-    });
+    }
 
     if (sheetConfigs.length === 0) {
         // Fallback defaults if no config found in Setup
@@ -962,6 +966,7 @@ Example:
                     }
                 }
 
+                const is1099 = vendor1099Map.get(vLower);
                 if (is1099) {
                     const t = (is1099.type || 'NEC');
                     if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
