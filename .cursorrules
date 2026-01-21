@@ -111,6 +111,7 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
    - **Internal Storage**: The application internally stores Debits as negative and Credits as positive (`Credit - Debit`).
    - **Display Logic**: Assets are explicitly flipped (`* -1`) during Balance Sheet generation to display as positive numbers.
    - **Double-Entry Requirement**: Every Ledger transaction should have balancing entries (e.g., specific Asset Debit balanced by Equity Credit).
+6. **Clean Up Before Commit**: ALWAYS delete temporary diagnostic scripts, debug output files, and unused code artifacts before making a commit. Ensure the repo is clean.
 
 ### Before Concluding ANY Task
 - [ ] Did I run the exact command the user would run?
