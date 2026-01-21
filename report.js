@@ -201,6 +201,7 @@ Example:
     // ERROR if any tables are missing
     if (missingTables.length > 0) {
         console.error(`\n[ERROR] Setup sheet is missing required Excel table(s): ${missingTables.join(', ')}`);
+        console.error(`Required tables are: ${REQUIRED_TABLES.join(', ')}`);
         process.exit(1);
     }
 
