@@ -183,6 +183,8 @@ Example:
     const foundTables = [];
     const missingTables = [];
 
+
+
     // Check which tables exist
     REQUIRED_TABLES.forEach(tableName => {
         try {
