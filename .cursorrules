@@ -102,6 +102,15 @@ For every significant task or prompt, you must generate 4 Markdown documents in 
 2. **Threshold Checks**: Always check thresholds at display/output time, not just at storage time.
 3. **Legacy Support**: When supporting legacy columns, explicitly set ALL fields that new columns would provide.
 4. **Setup Sheet is Source of Truth**: The Setup sheet configuration is authoritative. NEVER circumvent it with "fuzzy logic" or auto-detection unless explicitly designed for that purpose. If Setup specifies a header row and headers aren't found there, ERROR and STOP - don't silently continue or search elsewhere.
+5. **Ledger Polarity & Usage**:
+   - The Ledger follows strict double-entry accounting principles:
+     - **Assets**: Debit increases (entered in Debit col), Credit decreases.
+     - **Liabilities/Equity**: Credit increases (entered in Credit col), Debit decreases.
+     - **Expenses**: Debit increases, Credit decreases.
+     - **Income**: Credit increases, Debit decreases.
+   - **Internal Storage**: The application internally stores Debits as negative and Credits as positive (`Credit - Debit`).
+   - **Display Logic**: Assets are explicitly flipped (`* -1`) during Balance Sheet generation to display as positive numbers.
+   - **Double-Entry Requirement**: Every Ledger transaction should have balancing entries (e.g., specific Asset Debit balanced by Equity Credit).
 
 ### Before Concluding ANY Task
 - [ ] Did I run the exact command the user would run?

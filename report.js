@@ -892,13 +892,11 @@ Example:
 
             const conf = uniqueCategories.get(catLower);
 
-            // Ledger Impact Calculation based on Account Type
-            // Assets: Debit increases (+), Credit decreases (-) → (dr - cr)
-            // Liabilities/Equity: Credit increases (+), Debit decreases (-) → (cr - dr)
-            // P&L: Income = Credit (+), Expense = Debit (-) → (cr - dr)
-            const accountType = conf?.accountType?.toLowerCase() || '';
-            const isAsset = accountType === 'asset';
-            const impact = isAsset ? (dr - cr) : (cr - dr);
+            // Default to P&L logic if report type isn't explicit, but check valid config first
+            // Standardize: Credit positive (+), Debit negative (-)
+            // P&L: Income (+), Expense (-)
+            // BS: Liability (+), Equity (+), Asset (-)
+            const impact = (cr - dr);
 
             const displayCat = conf?.displayName || catStr;
 
@@ -1090,10 +1088,16 @@ Example:
                 // Sub-Category Detail
                 if (showBSSub && catStats[r.label] && catStats[r.label].subCats) {
                     const subs = catStats[r.label].subCats;
+
+                    // Determine flip based on Asset type (same logic as main row)
+                    const conf = uniqueCategories.get(r.label.toLowerCase());
+                    const flip = (conf && conf.accountType && conf.accountType.toLowerCase().includes('asset')) ? -1 : 1;
+
                     const subKeys = Object.keys(subs).filter(k => Math.abs(subs[k]) > 0.01);
                     if (!(subKeys.length === 1 && subKeys[0] === '(No Sub-Cat)')) {
                         subKeys.sort().forEach(sub => {
-                            console.log(`   > ${sub.padEnd(max + 1)} : ${subs[sub].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                            const val = subs[sub] * flip;
+                            console.log(`   > ${sub.padEnd(max + 1)} : ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
                         });
                     }
                 }
