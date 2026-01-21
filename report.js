@@ -821,14 +821,22 @@ Example:
     }
 
     // --- 3. Process Ledger ---
+    // --- 3. Process Ledger ---
     // Find Ledger configuration from Setup
     const ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'ledger');
-    const ledgerHeaderRow = ledgerConfig ? (ledgerConfig.offset || 1) : 1;
 
-    if (showChecker) {
-        console.log(`\n[DEBUG] Ledger Config: ${JSON.stringify(ledgerConfig)}`);
-        console.log(`[DEBUG] Ledger Header Row: ${ledgerHeaderRow}`);
+    if (!ledgerConfig) {
+        console.error(`\n[ERROR] Checker Failed: "Ledger" configuration not found in Setup > SheetInfo.`);
+        console.error(`Your workbook contains a "Ledger" sheet, so you MUST define it in the SheetInfo table.`);
+        console.error(`Please add a row to SheetInfo:`);
+        console.error(`   Sheet Name: Ledger`);
+        console.error(`   Type:       Ledger`);
+        console.error(`   Flip:       No`);
+        console.error(`   Offset:     3 (or your header row)`);
+        process.exit(1);
     }
+
+    const ledgerHeaderRow = ledgerConfig.offset || 3; // Default to 3 if offset is 0/undefined but config exists
 
     // Dynamic Mapping for Ledger
     const ledgerMap = { date: null, desc: null, category: null, subCat: null, vendor: null, customer: null, dr: null, cr: null };
