@@ -1,0 +1,48 @@
+LLC Accounting Tool v2.0.0
+Resolved shortcut '\\192.168.1.90\Documents Private\taxes\2025\QOZB RMP Prop.lnk' -> '\\192.168.1.90\Documents Private\taxes\2025\qozb rmp proprietor\2025-QOZB RMP Prop.xlsx'
+[Sheet Stats] "bank": Processed 15 rows. Total Change: 213922.58
+[Linkage Logic] Applied bank Total (213922.58) to Asset "fidelity". Balance: 0.00 -> 213922.58
+[Sheet Stats] "CC": Processed 12 rows. Total Change: 0.00
+[Linkage Logic] Applied CC Total (0.00) to Liability "AX CC". Balance: 1227.93 -> 1227.93
+[Sheet Stats] "General Ledger": Processed 26 rows with data. Status: Balanced (Volume: 30,656.80). (Categorical Net Activity Impact: 46097.74)
+
+--- VENDOR SPENDING ---
+Vendor                                  Total  1099 Type Required  
+-------------------------------------------------------------------
+RMP Ventures LLC                    17,295.64  NEC         YES       
+RMP Development                     15,110.00  NEC         YES       
+NA                                   1,702.45                        
+bestbuy                                931.74                        
+amazon                                 290.21                        
+City of lassen                          35.00                        
+City of modoc                           35.00                        
+exon mobil                              24.61                        
+City of Siskiyou                       -35.00                        
+City of Tuolumne                       -35.00                        
+na-bs                               -1,227.93                        
+
+--- 1099 PAYER INFO (You) ---
+Name:    QOZB RMP Proprietor LLC
+TIN:     39-2764430
+Address: 9210 valencia lane, spring valley, CA 91977
+Phone:   (858) 224-2102
+Email:   admin@rmpventures.com
+
+--- 1099 RECIPIENT INFO (Vendors) ---
+Recipient                     Business                 TIN               Amount  Form
+-------------------------------------------------------------------------------------
+RMP ventures LLC                                       45-5098867      17295.64  NEC
+RMP Development                                        613-68-8679     15110.00  NEC
+
+--- WALLET RECONCILIATION ---
+Sheet Name                      Start      Change    Calc End     Exp End        Diff
+-------------------------------------------------------------------------------------
+bank                             0.00   213922.58   213922.58   213922.58        0.00
+CC                               0.00       -0.00       -0.00        0.00        0.00
+
+--- GLOBAL INTEGRITY CHECK ---
+Sum of Net Income + BS Changes:           260,020.32
+Total Sheet Flow (Bank+CC+Ledger):        260,020.32
+Total Tie Status:                    [OK] (Difference: 0.00)
+
+(Run with --save to update the Excel file)

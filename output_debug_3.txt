@@ -1,0 +1,98 @@
+LLC Accounting Tool v2.0.0
+Resolved shortcut '\\192.168.1.90\Documents Private\taxes\2025\QOZB RMP Prop.lnk' -> '\\192.168.1.90\Documents Private\taxes\2025\qozb rmp proprietor\2025-QOZB RMP Prop.xlsx'
+Loading workbook: \\192.168.1.90\Documents Private\taxes\2025\qozb rmp proprietor\2025-QOZB RMP Prop.xlsx...
+[Setup] Found all required tables: CompanyInfo, Categories, Vendor, Customer, SheetInfo
+[DEBUG] Header scanning on "Setup" complete. Best row: 1. Found headers: companyinfo, values, category, subcategory, type, report, vendors, nec, customers, sheetname, linkasset, shortname, headerrow, account, start, end
+[DEBUG] 1099 Column Detection: Type=null, Req=null, Legacy=10
+
+--- SETUP HEADER DETECTION ---
+Detected header row: 1
+Col Category: 4
+Col Sheet Name: 14
+Col Sheet Type: 17
+Col Report: 7
+  > 1099 Recognized: sergio (NEC)
+  > 1099 Recognized: hinal shah (NEC)
+  > 1099 Recognized: alfred (NEC)
+  > 1099 Recognized: jose cardona (NEC)
+  > 1099 Recognized: robin wood (NEC)
+  > 1099 Recognized: ismael acosta (NEC)
+  > 1099 Recognized: jerome regner (NEC)
+  > 1099 Recognized: marjan stone (NEC)
+  > 1099 Recognized: RMP Development (NEC)
+  > 1099 Recognized: RMP Ventures LLC (NEC)
+[Setup] Loaded 27 Valid Vendors, 0 Customers, 18 Categories.
+[DEBUG] Reading SheetInfo from Excel Table...
+[DEBUG] Found 3 Config Rows from Setup: Bank Transactions, Credit Card Transactions, General Ledger
+[Linkage Result] Sheet "Bank Transactions" (Type: "income") -> Linked to: "fidelity"
+[Linkage Result] Sheet "Credit Card Transactions" (Type: "expense") -> Linked to: "AX CC"
+[Linkage Result] Sheet "General Ledger" (Type: "ledger") -> Linked to: "NONE"
+
+--- CONSUMED SHEETINFO TABLE ---
+Sheet Name                    Type      Linked Account                Flip  Offset         Start         End
+-----------------------------------------------------------------------------------------------------------------
+Bank Transactions             income    fidelity                      NO    3               0.00   213922.58
+Credit Card Transactions      expense   AX CC                         YES   3               0.00        0.00
+General Ledger                ledger    NONE                          NO    3               0.00         N/A
+
+[DEBUG] Header scanning on "Sheet1" complete. Best row: 1. Found headers: lastname, firstname, type, tintype, tin, email, phonenumber, address, city, state, zipcode, country, name
+[Config] Sheet "Bank Transactions" using specified Header Row: 3
+[DEBUG] Sheet "Bank Transactions" (Header Row: 3). Mapped Columns: {"date":"Date","desc":"Description","amount":"Amount","category":"Category","subCat":"Sub-Category","vendor":"Vendor","customer":"Customer"}
+
+Processing "bank" (Bank Transactions):
+  Header Row: 3
+  Mapping: date:1, desc:2, amount:3, category:4, subCat:5, vendor:7, customer:8
+  Linked Account: fidelity
+[Sheet Stats] "bank": Processed 15 rows. Total Change: 213922.58
+[Linkage Logic] Applied bank Total (213922.58) to Asset "fidelity". Balance: 0.00 -> 213922.58
+[Config] Sheet "Credit Card Transactions" using specified Header Row: 3
+[DEBUG CC] Col 1: "Date" (Clean: "date")
+[DEBUG CC] Col 2: "Member" (Clean: "member")
+[DEBUG CC] Col 3: "Description" (Clean: "description")
+[DEBUG CC] Col 4: "Amount" (Clean: "amount")
+[DEBUG CC] Col 5: "Category" (Clean: "category")
+[DEBUG CC] Col 6: "Sub-Category" (Clean: "sub-category")
+[DEBUG CC] Col 7: "Extended Details" (Clean: "extended details")
+[DEBUG CC] Col 8: "Vendor" (Clean: "vendor")
+[DEBUG CC] Col 9: "Customer" (Clean: "customer")
+[DEBUG CC] Col 10: "Account Number" (Clean: "account number")
+[DEBUG CC] Col 11: "Receipt" (Clean: "receipt")
+[DEBUG CC] Col 12: "Report Type (Auto)" (Clean: "report type (auto)")
+[DEBUG] Sheet "Credit Card Transactions" (Header Row: 3). Mapped Columns: {"date":"Date","desc":"Description","amount":"Amount","category":"Category","subCat":"Sub-Category","vendor":"Vendor","customer":"Customer"}
+
+Processing "CC" (Credit Card Transactions):
+  Header Row: 3
+  Mapping: date:1, desc:3, amount:4, category:5, subCat:6, vendor:8, customer:9
+  [Polarity] Flip enabled for this sheet.
+  Linked Account: AX CC
+[Sheet Stats] "CC": Processed 12 rows. Total Change: 0.00
+[Linkage Logic] Applied CC Total (0.00) to Liability "AX CC". Balance: 1227.93 -> 1227.93
+[Sheet Stats] "General Ledger": Processed 26 rows. Status: Balanced. (Net Activity Impact: 46097.74)
+
+--- VENDOR SPENDING ---
+Vendor                                  Total  1099 Type Required  
+-------------------------------------------------------------------
+RMP Ventures LLC                    17,295.64  NEC         YES       
+RMP Development                     15,110.00  NEC         YES       
+NA                                   1,702.45                        
+bestbuy                                931.74                        
+amazon                                 290.21                        
+City of lassen                          35.00                        
+City of modoc                           35.00                        
+exon mobil                              24.61                        
+City of Siskiyou                       -35.00                        
+City of Tuolumne                       -35.00                        
+na-bs                               -1,227.93                        
+
+--- 1099 PAYER INFO (You) ---
+Name:    QOZB RMP Proprietor LLC
+TIN:     39-2764430
+Address: 9210 valencia lane, spring valley, CA 91977
+Phone:   (858) 224-2102
+Email:   admin@rmpventures.com
+
+--- 1099 RECIPIENT INFO (Vendors) ---
+Recipient                     Business                 TIN               Amount  Form
+-------------------------------------------------------------------------------------
+RMP ventures LLC                                       45-5098867      17295.64  NEC
+RMP Development                                                        15110.00  NEC
