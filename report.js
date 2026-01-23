@@ -660,6 +660,7 @@ Example:
             const colO = blockMap['headerrow'] || blockMap['offset'];
             const colT = blockMap['type'] || blockMap['sheettype']; // Optional now
             const colS = blockMap['shortname'] || blockMap['shortnames'];
+            const colFlip = blockMap['flip'] || blockMap['flippolarity'];
 
             if (showDebug) console.log(`[Setup] Found SheetInfo headers on Row ${blockHeaderRow}. Link Col: ${colL}, Start Col: ${colStart}, End Col: ${colEnd}`);
 
@@ -676,7 +677,8 @@ Example:
                         type: colT ? getVal(row.getCell(colT)) : '',
                         offset: colO ? getVal(row.getCell(colO)) : '',
                         startBalance: colStart ? (parseBalance(getVal(row.getCell(colStart))) || 0) : 0,
-                        endBalance: colEnd ? parseBalance(getVal(row.getCell(colEnd))) : null
+                        endBalance: colEnd ? parseBalance(getVal(row.getCell(colEnd))) : null,
+                        flip: colFlip ? getVal(row.getCell(colFlip)) : ''
                     });
                 }
             });
@@ -699,13 +701,20 @@ Example:
             let doLink = true;
             let link = null; // Initialize link here
 
-            if (cType === 'expense') {
+            if (cType === 'expense' || cType === 'cc' || cType.includes('credit') || cType.includes('liability')) {
                 doFlip = true;
             } else if (cType === 'income') {
                 doFlip = false;
             } else if (cType === 'ledger') {
                 doFlip = false;
                 doLink = false; // Ledger never links automatically
+            }
+
+            // Explicit Override from 'Flip' column
+            if (conf.flip) {
+                const fVal = conf.flip.toString().toLowerCase();
+                if (fVal === 'yes' || fVal === 'true' || fVal === 'y' || fVal === '1') doFlip = true;
+                if (fVal === 'no' || fVal === 'false' || fVal === 'n' || fVal === '0') doFlip = false;
             }
 
             // Linkage Priority 0: Explicit 'Category' column in SheetInfo
@@ -2536,7 +2545,7 @@ Example:
     reports.sheetList = reportSheetList;
     reports.sheetNameMap = sheetNameMap;
 
-    if (show1099) {
+    if (show1099 && showDebug) {
         console.log('\n[DEBUG] Vendor 1099 Stats Dump:');
         console.log(JSON.stringify(vendor1099Stats, null, 2));
     }
