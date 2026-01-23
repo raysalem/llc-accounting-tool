@@ -27,16 +27,26 @@ function resolveShortcut(filePath) {
     return filePath;
 }
 
+function isTruthy(val) {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'boolean') return val;
+    const s = val.toString().trim().toLowerCase();
+    return s === 'yes' || s === 'true' || s === 'y' || s === 'x' || s === '1';
+}
+
 async function updateFinancials() {
     const args = process.argv.slice(2);
     const saveFlag = args.includes('--save');
     const showPL = args.includes('--pl');
     const showBS = args.includes('--bs');
     const showVendor = args.includes('--vendor');
+    const showVendorSub = args.includes('--vendor-sub');
     const showCustomer = args.includes('--customer');
+    const showCustomerSub = args.includes('--customer-sub');
     const showPLSub = args.includes('--pl-sub');
     const showBSSub = args.includes('--bs-sub');
     const showChecker = args.includes('--checker');
+    const showDebug = args.includes('--debug');
     const show1099 = args.includes('--1099')
 
     // Parse --details <Category>
@@ -64,10 +74,13 @@ Flags:
   --pl            Print the Profit & Loss statement to the console.
   --bs            Print the Balance Sheet to the console.
   --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
+  --debug         Enable verbose debug output for troubleshooting.
   --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
   --bs-sub        (Optional) Print detailed Balance Sheet with sub-category breakdowns.
   --vendor        (Optional) Print spending statistics by Vendor.
+  --vendor-sub    (Optional) Print detailed Vendor Spending with sheet-level breakdowns.
   --customer      (Optional) Print income statistics by Customer.
+  --customer-sub  (Optional) Print detailed Customer Income with sheet-level breakdowns.
   --1099          (Optional) Generate 1099-NEC and 1099-INT reports for enabled vendors.
   --details "Cat" (Optional) List all transactions for a specific Category (e.g., --details "Office Supplies").
 
@@ -78,7 +91,7 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--customer', '--pl-sub', '--bs-sub', '--checker', '--details', '--help', '--1099', '--1099-nec'
+        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec'
     ];
 
     // Check for unknown arguments
@@ -89,7 +102,7 @@ Example:
         process.exit(1);
     }
 
-    const specificFilter = showPL || showBS || showVendor || showCustomer || showPLSub || showBSSub || showChecker || showDetails || show1099;
+    const specificFilter = showPL || showBS || showVendor || showCustomer || showCustomerSub || showPLSub || showBSSub || showChecker || showDetails || show1099;
     const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
@@ -164,17 +177,10 @@ Example:
     function getVal(cell) {
         if (!cell) return '';
         let v = cell.value;
-        if (v && typeof v === 'object') {
-            if (v instanceof Date) return v;
-            if (v.result !== undefined) {
-                if (v.result === null || v.result === undefined) return '';
-                return v.result;
-            }
-            if (v.richText) return v.richText.map(t => t.text).join('').trim();
-            if (v.text) return v.text.toString().trim();
-            if (v.formula) return '';
-            return v.toString().trim();
-        }
+        if (v && typeof v === 'object' && v.result !== undefined) v = v.result;
+        if (v && v.richText) return v.richText.map(t => t.text).join('').trim();
+        if (typeof v === 'number') return v;
+        if (v instanceof Date) return v;
         return (v === null || v === undefined) ? '' : v.toString().trim();
     }
 
@@ -201,10 +207,11 @@ Example:
     });
 
     // ERROR if any tables are missing
+    // WARN if tables are missing (but allow fallback to row-scanning)
     if (missingTables.length > 0) {
-        console.error(`\n[ERROR] Setup sheet is missing required Excel table(s): ${missingTables.join(', ')}`);
-        console.error(`Required tables are: ${REQUIRED_TABLES.join(', ')}`);
-        process.exit(1);
+        console.warn(`[WARNING] Setup sheet is missing formal Excel table(s): ${missingTables.join(', ')}`);
+        console.warn(`Falling back to row-scanning for Setup configuration.`);
+        // Do not exit, as we have fallback logic below
     }
 
     if (showChecker) {
@@ -213,67 +220,93 @@ Example:
 
     // TODO: Replace this with table-based reading once tables are created
     // Temporary fallback: Keep old header-map logic for backward compatibility
-    function getHeaderMap(sheet, rowIdx = 1) {
-        const map = new Map();
-        const row = sheet.getRow(rowIdx);
-        row.eachCell((cell, colNumber) => {
-            const val = getVal(cell).toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-            map.set(val, colNumber);
-        });
-        return map;
+    function getHeaderMap(sheet) {
+        let bestRowIdx = 1;
+        let bestMap = new Map();
+        let maxFound = -1;
+        const lookups = ['category', 'subcategory', 'vendors', 'vendor', 'sheetname', 'sheetnameconfig', 'report', 'linkcategory', 'linkcat'];
+
+        for (let ri = 1; ri <= 10; ri++) {
+            const currentMap = new Map();
+            const row = sheet.getRow(ri);
+            let foundCount = 0;
+            row.eachCell((cell, colNumber) => {
+                const val = getVal(cell).toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (val) {
+                    if (!currentMap.has(val)) currentMap.set(val, []);
+                    currentMap.get(val).push(colNumber);
+                    if (lookups.includes(val)) foundCount++;
+                }
+            });
+            if (foundCount > maxFound) {
+                maxFound = foundCount;
+                bestRowIdx = ri;
+                bestMap = currentMap;
+            }
+            if (foundCount >= 3 || (foundCount > 0 && ri > 5)) break;
+        }
+        return { map: bestMap, headerRow: bestRowIdx };
     }
-    const setupHeaders = getHeaderMap(setupSheet, 1);
+    const { map: setupHeaders, headerRow: setupHeaderRow } = getHeaderMap(setupSheet);
+    const getCol = (key, preferred = 'first') => {
+        const indices = setupHeaders.get(key);
+        if (!indices || indices.length === 0) return null;
+        return preferred === 'first' ? indices[0] : indices[indices.length - 1];
+    };
 
     // Table 1: Category Info
-    const colCategory = setupHeaders.get('category');
-    const colSubCategory = setupHeaders.get('subcategory') || setupHeaders.get('sub-category'); // Normalized 'subcategory' is handled by regex above
-    const colType = setupHeaders.get('type');
-    const colReport = setupHeaders.get('report');
+    const colCategory = getCol('category');
+    const colSubCategory = getCol('subcategory');
+    const colType = getCol('accounttype') || getCol('type');
+    const colReport = getCol('report') || getCol('pnlbs') || getCol('statement') || getCol('bspl');
 
     // Table 2: Vendors
-    const colVendor = setupHeaders.get('vendors') || setupHeaders.get('vendor');
+    const colVendor = getCol('vendors') || getCol('vendor');
 
     // Additional Vendor Columns for 1099
-    // Normalized keys: 'businessname', 'fullname', 'taxid'...
-    const colBusiness = setupHeaders.get('businessname') || setupHeaders.get('business');
-    const colName = setupHeaders.get('name') || setupHeaders.get('fullname');
-    const colSSN = setupHeaders.get('ssn') || setupHeaders.get('ein') || setupHeaders.get('taxid') || setupHeaders.get('tin');
-    const colAddress = setupHeaders.get('address');
-    const colEmail = setupHeaders.get('email');
-    const colPhone = setupHeaders.get('phone');
+    const colBusiness = getCol('businessname') || getCol('business');
+    const colName = getCol('name') || getCol('fullname');
+    const colSSN = getCol('ssn') || getCol('ein') || getCol('taxid') || getCol('tin') || getCol('ssnein');
+    const colAddress = getCol('address');
+    const colEmail = getCol('email');
+    const colPhone = getCol('phone');
 
-    const finalCol1099 = setupHeaders.get('1099') || setupHeaders.get('1099nec');
+    const finalCol1099 = getCol('1099') || getCol('1099nec');
     // New Split Columns: "1099 Type" -> "1099type", "1099 Required" -> "1099required"
     const col1099Type = setupHeaders.get('1099type');
     const col1099Req = setupHeaders.get('1099required');
     // console.log(`[DEBUG] 1099 Column Detection: Type=${col1099Type}, Req=${col1099Req}, Legacy=${finalCol1099}`);
 
     // Table 3: Customers
-    const colCustomer = setupHeaders.get('customers') || setupHeaders.get('customer');
+    const colCustomer = getCol('customers') || getCol('customer');
 
-    // Table 4: Sheet Info
-    const colSheetName = setupHeaders.get('sheetnameconfig') || setupHeaders.get('sheetname');
-    const colSheetType = setupHeaders.get('accounttype') || setupHeaders.get('sheettype');
-    const colFlip = setupHeaders.get('flippolarityyesno') || setupHeaders.get('flippolarity') || setupHeaders.get('flip');
-    const colOffset = setupHeaders.get('headerrow') || setupHeaders.get('offset');
+    // Table 4: Sheet Info - CRITICAL: We must ensure we don't accidentally pick columns from Table 1.
+    // Since SheetInfo is typically to the right or below, we prefer the 'last' occurrences of these names.
+    const colSheetName = getCol('sheetnameconfig') || getCol('sheetname', 'last');
+    const colSheetType = getCol('sheettype') || getCol('type', 'last');
+    // The user renamed 'Category' to 'Link Category' for the asset account linkage
+    const colSheetCat = getCol('linkcategory') || getCol('linkcat') || getCol('category', 'last');
+    const colShortName = getCol('shortname', 'last') || getCol('short', 'last');
+    const colFlip = getCol('flippolarityyesno', 'last') || getCol('flippolarity', 'last') || getCol('flip', 'last');
+    const colOffset = getCol('headerrow', 'last') || getCol('offset', 'last');
 
     // Table 5: Payer Info (Vertical Key-Value)
-    // "Company Info" -> "companyinfo", "Payer Info" -> "payerinfo"
-    let colPayerKey = setupHeaders.get('companyinfo') || setupHeaders.get('payerinfo') || setupHeaders.get('companyname');
+    let colPayerKey = getCol('companyinfo', 'last') || getCol('payerinfo', 'last') || getCol('companyname', 'last');
     let colPayerValue = colPayerKey ? colPayerKey + 1 : null;
     // If strict "Key" / "Value" headers exist, use them? No, user said "two columns". We assume Key Col -> Value Col.
 
     if (showChecker) {
-        console.log('--- DEBUG MAPPING ---');
-        console.log(`Col Category: ${colCategory}`);
-        console.log(`Col Sub-Category: ${colSubCategory}`);
-        console.log(`Col Sheet Name: ${colSheetName}`);
-        console.log(`Col Sheet Type: ${colSheetType}`);
+        console.log(`\n--- SETUP HEADER DETECTION ---`);
+        console.log(`Detected header row: ${setupHeaderRow}`);
+        console.log(`Col Category: ${colCategory || 'NOT FOUND'}`);
+        console.log(`Col Sheet Name: ${colSheetName || 'NOT FOUND'}`);
+        console.log(`Col Sheet Type: ${colSheetType || 'NOT FOUND'}`);
+        console.log(`Col Report: ${colReport || 'NOT FOUND'}`);
     }
 
     // --- Pass 1: Read Reference Tables (Categories, Vendors, Customers) ---
     setupSheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
+        if (rowNumber <= setupHeaderRow) return;
 
         // 1. Process Category Table
         const catName = colCategory ? getVal(row.getCell(colCategory)) : null;
@@ -307,8 +340,21 @@ Example:
                 }
             }
 
+            let rType = 'P&L';
+            const rUpper = report.toString().trim().toUpperCase();
+            const tLower = typeVal.toString().trim().toLowerCase();
+
+            if (rUpper.includes('BALANCE') || rUpper.includes('BS')) {
+                rType = 'Balance Sheet';
+            } else if (rUpper.includes('P&L') || rUpper.includes('PROFIT')) {
+                rType = 'P&L';
+            } else if (tLower.includes('asset') || tLower.includes('liability') || tLower.includes('bank') || tLower.includes('credit') || tLower.includes('cc')) {
+                // Fallback for missing/ambiguous Report column
+                rType = 'Balance Sheet';
+            }
+
             uniqueCategories.set(lower, {
-                report,
+                report: rType,
                 accountType: typeVal,
                 subCategory: subCatVal,
                 displayName: trimmed
@@ -366,7 +412,7 @@ Example:
             // Capture Details
             vendorDetailsMap.set(lowerV, {
                 business: colBusiness ? getVal(row.getCell(colBusiness)) : '',
-                name: colName ? getVal(row.getCell(colName)) : '',
+                name: colName ? getVal(row.getCell(colName)) : vRaw, // Fallback to raw vendor name
                 ssn: colSSN ? getVal(row.getCell(colSSN)) : '',
                 address: colAddress ? getVal(row.getCell(colAddress)) : '',
                 email: colEmail ? getVal(row.getCell(colEmail)) : '',
@@ -397,69 +443,216 @@ Example:
 
 
 
-    // --- Pass 2: Read Sheet Configurations from SheetInfo Table ---
-    const sheetInfoTable = setupSheet.getTable('SheetInfo');
-
-    if (showChecker) {
-        console.log('[DEBUG] SheetInfo table:', JSON.stringify(sheetInfoTable.table, null, 2));
+    // --- Check for Customer/Vendor Overlap ---
+    const overlapSet = new Set();
+    for (const [vLower, vName] of validVendors) {
+        if (validCustomers.has(vLower)) {
+            overlapSet.add(vName); // or validCustomers.get(vLower)
+        }
     }
 
-    // Parse table range to get row numbers
-    const tableRef = sheetInfoTable.table.tableRef;
-    const match = tableRef.match(/([A-Z]+)(\d+):([A-Z]+)(\d+)/);
-    const startRow = parseInt(match[2]) + 1; // Skip header
-    const endRow = parseInt(match[4]);
-    const startCol = match[1].charCodeAt(0) - 64; // Convert A->1, B->2, etc
+    if (overlapSet.size > 0) {
+        console.warn(`\n[!] CRITICAL ACCOUNTING WARNING: Overlap detected between Vendors and Customers.`);
+        console.warn(`    The following names appear in BOTH Vendor and Customer tables:`);
+        console.warn(`    ${Array.from(overlapSet).join(', ')}`);
+        console.warn(`    Principle: An entity should be EITHER a Vendor (Expense side) OR a Customer (Income side), never both.`);
+        console.warn(`    Fix: Rename one (e.g., "Client X (Vendor)" vs "Client X").\n`);
+    }
 
-    for (let r = startRow; r <= endRow; r++) {
-        const row = setupSheet.getRow(r);
-        const confSheetName = getVal(row.getCell(startCol));
-        const confType = getVal(row.getCell(startCol + 1));
-        const confFlip = getVal(row.getCell(startCol + 2));
-        const confOffset = getVal(row.getCell(startCol + 3));
+    // --- Check for Sub-Category / Customer / Vendor Overlap ---
+    // User Request: "ensure category, sub-catgory and vendor customer names, never are onlky used for the correct column"
+    const subCatOverlaps = { cust: [], vend: [] };
 
+    // Check SubCategories vs Customers
+    validSubCategories.forEach(sub => {
+        if (validCustomers.has(sub)) subCatOverlaps.cust.push(validCustomers.get(sub));
+        if (validVendors.has(sub)) subCatOverlaps.vend.push(validVendors.get(sub));
+    });
+
+    if (subCatOverlaps.cust.length > 0) {
+        console.warn(`\n[!] AMBIGUITY WARNING: Sub-Category vs Customer Overlap.`);
+        console.warn(`    The following names are defined as BOTH a Sub-Category AND a Customer:`);
+        console.warn(`    ${subCatOverlaps.cust.join(', ')}`);
+        console.warn(`    Risk: If "QOZB" is a Customer, it should generally NOT be a Sub-Category.`);
+        console.warn(`    This causes confusion in reports. Please rename one (e.g., "QOZB Sub" vs "QOZB Cust").\n`);
+    }
+
+    if (subCatOverlaps.vend.length > 0) {
+        console.warn(`\n[!] AMBIGUITY WARNING: Sub-Category vs Vendor Overlap.`);
+        console.warn(`    The following names are defined as BOTH a Sub-Category AND a Vendor:`);
+        console.warn(`    ${subCatOverlaps.vend.join(', ')}`);
+        console.warn(`    Fix: Rename the Sub-Category or the Vendor to be distinct.\n`);
+    }
+
+    // Check Categories vs Customers/Vendors (Less common, but possible)
+    const catOverlaps = { cust: [], vend: [] };
+    validCategories.forEach(cat => {
+        if (validCustomers.has(cat)) catOverlaps.cust.push(validCustomers.get(cat));
+        if (validVendors.has(cat)) catOverlaps.vend.push(validVendors.get(cat));
+    });
+
+    if (catOverlaps.cust.length > 0 || catOverlaps.vend.length > 0) {
+        console.warn(`\n[!] AMBIGUITY WARNING: Category Name Overlaps.`);
+        if (catOverlaps.cust.length) console.warn(`    Category == Customer: ${catOverlaps.cust.join(', ')}`);
+        if (catOverlaps.vend.length) console.warn(`    Category == Vendor:   ${catOverlaps.vend.join(', ')}`);
+        console.warn(`    Ideally, structural Categories (e.g. Sales, Rent) should not share names with entities.\n`);
+    }
+
+    // --- Pass 2: Read Sheet Configurations ---
+    const sheetInfoTable = setupSheet.getTable('SheetInfo');
+    let configRows = [];
+
+    if (sheetInfoTable && sheetInfoTable.table && sheetInfoTable.table.tableRef) {
+        if (showChecker) console.log('[DEBUG] Reading SheetInfo from Excel Table...');
+
+        const tableRef = sheetInfoTable.table.tableRef;
+        const match = tableRef.match(/([A-Z]+)(\d+):([A-Z]+)(\d+)/);
+        if (match) {
+            const startRow = parseInt(match[2]);
+            const headerRow = setupSheet.getRow(startRow);
+            const headerCols = {};
+            headerRow.eachCell((cell, colNumber) => {
+                const val = (cell.value || '').toString().toLowerCase().trim().replace(/[^a-z]/g, '');
+                headerCols[val] = colNumber;
+            });
+
+            const colN = headerCols['sheetname'] || headerCols['sheetnameconfig'] || 1;
+            const colT = headerCols['sheettype'] || headerCols['type'] || 2;
+            const colC = headerCols['linkcategory'] || headerCols['linkcat'] || headerCols['category'] || 0;
+            const colF = headerCols['flippolarityyesno'] || headerCols['flippolarity'] || headerCols['flip'] || 3;
+            const colO = headerCols['headerrow'] || headerCols['offset'] || 4;
+            const colS = headerCols['shortnames'] || headerCols['shortname'] || 5;
+
+            const endRow = parseInt(match[4]);
+            for (let r = startRow + 1; r <= endRow; r++) {
+                const row = setupSheet.getRow(r);
+                configRows.push({
+                    name: getVal(row.getCell(colN)),
+                    type: getVal(row.getCell(colT)),
+                    cat: colC ? getVal(row.getCell(colC)) : '',
+                    flip: getVal(row.getCell(colF)),
+                    offset: getVal(row.getCell(colO)),
+                    shortName: getVal(row.getCell(colS))
+                });
+            }
+        }
+    } else {
+        if (showChecker) console.log('[DEBUG] SheetInfo Table missing. Scanning rows using detected headers...');
+        // Fallback: Scan entire sheet using found column indices
+        if (colSheetName) {
+            setupSheet.eachRow((row, r) => {
+                if (r === 1) return;
+                const name = getVal(row.getCell(colSheetName));
+                if (name && name.toString().trim()) {
+                    configRows.push({
+                        name: name,
+                        type: colSheetType ? getVal(row.getCell(colSheetType)) : '',
+                        cat: colSheetCat ? getVal(row.getCell(colSheetCat)) : '',
+                        flip: colFlip ? getVal(row.getCell(colFlip)) : '',
+                        offset: colOffset ? getVal(row.getCell(colOffset)) : '',
+                        shortName: colShortName ? getVal(row.getCell(colShortName)) : ''
+                    });
+                }
+            });
+        }
+    }
+
+    // Process Valid Config Rows
+    if (showDebug) console.log(`[DEBUG] Found ${configRows.length} Config Rows from Setup: ${configRows.map(r => r.name).join(', ')}`);
+
+    for (const conf of configRows) {
+        const confSheetName = conf.name;
         if (confSheetName) {
-            const cType = confType ? confType.toString().trim() : '';
+            const cType = conf.type ? conf.type.toString().trim() : '';
+            const confFlip = conf.flip;
+            const confOffset = conf.offset;
+
             let link = null;
 
-            // Try to find a linked GL Account based on "Account Type" match
-            for (const [catRaw, catData] of uniqueCategories.entries()) {
-                const catSub = catData.subCategory ? catData.subCategory.toLowerCase() : 'N/A';
+            // Linkage Priority 0: Explicit 'Category' column in SheetInfo
+            if (conf.cat) {
+                const explicitCat = conf.cat.toString().trim();
+                const lowerEC = explicitCat.toLowerCase();
+                // Check if this is a direct match to a display name or key
+                if (uniqueCategories.has(lowerEC)) {
+                    link = uniqueCategories.get(lowerEC).displayName;
+                } else {
+                    // Search for exact display name match
+                    for (const [catRaw, catData] of uniqueCategories.entries()) {
+                        if (catData.displayName && catData.displayName.toLowerCase() === lowerEC) {
+                            link = catData.displayName;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!link && cType) {
                 const targetType = cType.toLowerCase();
-
-                if (showChecker && cType === 'Bank') {
-                    console.log(`Checking Cat: "${catData.displayName}" | Sub: "${catSub}" vs Target: "${targetType}"`);
+                // Linkage Priority 1: Exact Name Match with Balance Sheet Categories
+                for (const [catRaw, catData] of uniqueCategories.entries()) {
+                    if (catData.report !== 'Balance Sheet') continue;
+                    if (catData.displayName && catData.displayName.toLowerCase() === targetType) {
+                        link = catData.displayName;
+                        break;
+                    }
                 }
 
-                // Check 'Type' (Asset/Liability)
-                if (catData.accountType && catData.accountType.toLowerCase() === targetType) {
-                    link = catData.displayName;
-                    break;
-                }
-                // Check 'Sub-Category' (Bank/General)
-                if (catData.subCategory && catData.subCategory.toLowerCase() === targetType) {
-                    link = catData.displayName;
-                    break;
-                }
-                // Check exact Category Name match
-                if (catData.displayName && catData.displayName.toLowerCase() === targetType) {
-                    link = catData.displayName;
-                    break;
+                // Linkage Priority 2: Sub-Category or Account Type Match
+                if (!link) {
+                    for (const [catRaw, catData] of uniqueCategories.entries()) {
+                        if (catData.report !== 'Balance Sheet') continue;
+
+                        // Check 'Sub-Category' (Bank/General)
+                        if (catData.subCategory && catData.subCategory.toLowerCase() === targetType) {
+                            link = catData.displayName;
+                            break;
+                        }
+                        // Check 'Type' (Asset/Liability)
+                        if (catData.accountType && catData.accountType.toLowerCase() === targetType) {
+                            link = catData.displayName;
+                            break;
+                        }
+                    }
                 }
             }
 
             if (showChecker) {
                 console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${link || 'NONE'}"`);
+                if (!link) {
+                    const bsExamples = Array.from(uniqueCategories.values())
+                        .filter(c => c.report === 'Balance Sheet')
+                        .map(c => `"${c.displayName}" (${c.accountType || 'no type'})`)
+                        .slice(0, 5);
+                    console.log(`  > Link Failed: No category found with Report="Balance Sheet" matching "${targetType}".`);
+                    if (bsExamples.length > 0) {
+                        console.log(`  > Available BS accounts: ${bsExamples.join(', ')}${bsExamples.length === 5 ? '...' : ''}`);
+                    } else {
+                        console.log(`  > WARNING: No Balance Sheet categories loaded! Check your 'Report' column.`);
+                    }
+                }
             }
 
             sheetConfigs.push({
                 name: confSheetName.toString().trim(),
+                shortName: (conf.shortName && conf.shortName.toString().trim()) || confSheetName.toString().trim(),
                 type: cType,
-                flip: !!(confFlip && confFlip.toString().toLowerCase().includes('y')),
+                flip: isTruthy(confFlip),
                 offset: parseInt(confOffset) || 0,
                 linkedAccount: link
             });
         }
+    }
+
+    if (showChecker) {
+        console.log(`\n--- CONSUMED SHEETINFO TABLE ---`);
+        const header = `Sheet Name`.padEnd(30) + `Type`.padEnd(15) + `Linked Account`.padEnd(30) + `Flip`.padEnd(10) + `Offset`;
+        console.log(header);
+        console.log("-".repeat(header.length));
+        sheetConfigs.forEach(s => {
+            console.log(`${s.name.padEnd(30)}${s.type.padEnd(15)}${(s.linkedAccount || 'NONE').padEnd(30)}${(s.flip ? 'YES' : 'NO').padEnd(10)}${s.offset}`);
+        });
+        console.log("");
     }
 
     if (sheetConfigs.length === 0) {
@@ -560,23 +753,35 @@ Example:
             continue;
         }
 
+        // --- Skip Ledger in main loop (handled separately in Step 3) ---
+        if (config.name.toLowerCase() === 'ledger' || config.type.toLowerCase() === 'ledger') {
+            continue;
+        }
+
         const tStr = config.type.toLowerCase();
         const isCC = tStr.includes('cc') || tStr.includes('card') || tStr.includes('credit') || tStr.includes('amex');
         const pType = isCC ? 'cc' : 'bank';
 
         // Dynamic Map detection
-        let headerRowIndex = config.offset || 1;
+        let headerRowIndex = 1; // Default
+        const configOffset = parseInt(config.offset);
 
-        // Smarter scan: Check rows 1-5 for actual header signature
-        for (let r = 1; r <= 5; r++) {
-            const rowVals = sheet.getRow(r).values;
-            if (Array.isArray(rowVals)) {
-                // Check if row contains major headers
-                const rowStr = rowVals.map(v => v ? v.toString().toLowerCase() : '').join(' ');
-                if (HEAD_MATCH(rowStr)) {
-                    headerRowIndex = r;
-                    config.offset = r;
-                    break;
+        if (!isNaN(configOffset) && configOffset > 0) {
+            // Golden Rule: User Input is Mandatory
+            headerRowIndex = configOffset;
+            if (showChecker) console.log(`[Config] Sheet "${config.name}" using specified Header Row: ${headerRowIndex}`);
+        } else {
+            // Fallback: Scan rows 1-5 only if no offset provided
+            for (let r = 1; r <= 5; r++) {
+                const rowVals = sheet.getRow(r).values;
+                if (Array.isArray(rowVals)) {
+                    const rowStr = rowVals.map(v => v ? v.toString().toLowerCase() : '').join(' ');
+                    // console.log(`[DEBUG SCAN] Sheet "${config.name}" Row ${r}: "${rowStr}"`);
+                    if (HEAD_MATCH(rowStr)) {
+                        headerRowIndex = r;
+                        config.offset = r;
+                        break;
+                    }
                 }
             }
         }
@@ -593,6 +798,10 @@ Example:
         headerRow.eachCell((cell, colNumber) => {
             const val = getVal(cell);
             const vLower = val.toString().toLowerCase().trim();
+
+            if (showDebug && sheet.name.includes('Credit Card')) {
+                console.log(`[DEBUG CC] Col ${colNumber}: "${val}" (Clean: "${vLower}")`);
+            }
 
             if (findCol(val, HEADERS.DATE)) { map.date = colNumber; headerNames.date = val; }
             else if (findCol(val, HEADERS.DESC)) { map.desc = colNumber; headerNames.desc = val; }
@@ -612,211 +821,353 @@ Example:
                     headerNames.customer = val;
                 }
             }
+            // DEBUG: Force only Credit Card Transactions
         });
+
+        if (showDebug) console.log(`[DEBUG] Sheet "${config.name}" (Header Row: ${headerRowIndex}). Mapped Columns:`, JSON.stringify(headerNames));
 
         if (showChecker) {
             if (!map.vendor) console.warn(`  [!] WARNING: No Vendor column found for sheet "${sheet.name}". 'Unknown Vendor' checks will be skipped for this sheet.`);
         }
 
         if (showChecker) {
-            console.log(`\nProcessing "${sheet.name}":`);
+            console.log(`\nProcessing "${config.shortName}" (${config.name}):`);
             console.log(`  Header Row: ${headerRowIndex}`);
-            console.log(`  Mapping (Indices): ${JSON.stringify(map)}`);
-            console.log(`  Mapping (Headers): ${JSON.stringify(headerNames)}`);
+
+            if (!map.date) console.warn(`  [!] CRITICAL: 'Date' column not found in "${config.shortName}"`);
+            if (!map.amount) console.warn(`  [!] CRITICAL: 'Amount' column not found in "${config.shortName}"`);
+
+            console.log(`  Mapping: ${Object.entries(map).filter(([k, v]) => v).map(([k, v]) => k + ':' + v).join(', ')}`);
+            if (config.flip) console.log(`  [Polarity] Flip enabled for this sheet.`);
+        }
+
+        let processedRows = 0;
+
+        if (showDebug && sheet.name.includes('AX CC')) {
+            console.log(`[DEBUG AX CC] Sheet Found. Config Offset: ${config.offset}. Total Rows in Sheet: ${sheet.rowCount}`);
         }
 
         sheet.eachRow((row, r) => {
-            if (r <= config.offset) return;
-
-            const vendorVal = map.vendor ? getVal(row.getCell(map.vendor)) : '';
-            const customerVal = map.customer ? getVal(row.getCell(map.customer)) : '';
-            const categoryVal = map.category ? getVal(row.getCell(map.category)) : '';
-            const subCatVal = map.subCat ? getVal(row.getCell(map.subCat)) : '';
-            let amount = map.amount ? getVal(row.getCell(map.amount)) : 0;
-            if (typeof amount !== 'number') amount = parseFloat(amount) || 0;
-
-            const rawDate = map.date ? getVal(row.getCell(map.date)) : '';
-            const rawDesc = map.desc ? getVal(row.getCell(map.desc)).toString().toLowerCase() : '';
-
-            // Validate date is actually a Date object or valid date string
-            const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] :
-                (rawDate && typeof rawDate === 'string' ? rawDate : 'N/A');
-
-            // Offset check
-            if (r === config.offset + 1) {
-                const rowValues = row.values.map(v => (v ? v.toString().toLowerCase() : ''));
-                if (HEAD_MATCH(rowValues.join(' '))) {
-                    offsetWarnings.push({ sheet: sheet.name, row: r, matches: ['Header Signature Detected'] });
-                }
-            }
-
-            if (!rawDate && !rawDesc && !amount) return;
-            if (rawDesc.includes('total') || rawDesc.includes('balance') || rawDesc.includes('sum')) return;
-            if (!rawDate) return;
-
-            // Skip rows with invalid amounts (NaN after parsing)
-            if (isNaN(amount)) return;
-
-            if (config.flip) amount *= -1;
-
-            // Accumulate Sheet Total (Net Flow)
-            sheetTotal += amount;
-            if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
-
-            if (!categoryVal && Math.abs(amount) > 0.01) {
-                if (pType === 'cc') uncategorizedCC++; else uncategorizedBank++;
-                uncategorizedDetails.push({ sheet: sheet.name, row: r, date: displayDate, desc: rawDesc });
-            }
-
-            // Define catLower for use in vendor/customer tracking
-            const catLower = categoryVal ? categoryVal.toString().trim().toLowerCase() : null;
-
-            if (categoryVal) {
-                const catStr = categoryVal.toString().trim();
-
-                if (!validCategories.has(catLower)) {
-                    illegalCategories.push({ value: catStr, sheet: sheet.name, row: r, date: displayDate });
+            try {
+                if (r <= config.offset) {
+                    // if (sheet.name.includes('AX CC')) console.log(`[AX CC] Skipping Row ${r} (<= Offset ${config.offset})`);
+                    return;
                 }
 
-                // Use Display Name for stats if available, else usage case
-                const displayCat = uniqueCategories.get(catLower)?.displayName || catStr;
+                const vendorVal = map.vendor ? getVal(row.getCell(map.vendor)) : '';
+                const customerVal = map.customer ? getVal(row.getCell(map.customer)) : '';
+                const categoryVal = map.category ? getVal(row.getCell(map.category)) : '';
+                const subCatVal = map.subCat ? getVal(row.getCell(map.subCat)) : '';
+                let amount = map.amount ? getVal(row.getCell(map.amount)) : 0;
 
-                if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {} };
-                catStats[displayCat].total += amount;
+                // --- Initialize stats structures if needed ---
+                // Category stats (for PL/BS) with per-sheet breakdown
+                // --- REDUNDANT BLOCK REMOVED ---
+                // The previous logic here (Lines 713-732) was using catLower as key, which conflicts with later logic using DisplayName.
+                // We strip this block and rely on the consolidated logic below.
+                // -------------------------------
 
-                const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+                // Vendor / Customer stats tracking (consolidated below)
 
-                // Validate subcategory if one is provided
-                if (subCatVal && sName !== '(No Sub-Cat)') {
-                    const sLower = sName.toLowerCase();
-                    if (!validSubCategories.has(sLower)) {
-                        illegalSubCategories.push({
-                            value: sName,
-                            category: displayCat,
+
+                // Customer stats with per-sheet breakdown (existing logic retained below)
+
+                if (typeof amount !== 'number') {
+                    // Sanitize string (remove $, commas, etc)
+                    const amtStr = amount.toString().trim();
+                    if (amtStr === '' || amtStr === '-') {
+                        amount = 0;
+                    } else {
+                        const cleanAmt = amtStr.replace(/[^0-9.-]/g, '');
+                        const parsed = parseFloat(cleanAmt);
+                        if (isNaN(parsed)) {
+                            if (showChecker && amtStr.length > 0) {
+                                console.warn(`[WARNING] Sheet "${sheet.name}" Row ${r}: Could not parse amount "${amount}". Skipping.`);
+                            }
+                            return; // Skip this row safely
+                        }
+                        amount = parsed;
+                    }
+                }
+
+                function excelDateToJS(serial) {
+                    if (typeof serial !== 'number') return serial;
+                    // Excel date offset: Jan 1, 1900.
+                    // Note: Excel incorrectly treats 1900 as a leap year, so we subtract 2.
+                    const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+                    return date;
+                }
+
+                const rawDateInput = map.date ? getVal(row.getCell(map.date)) : '';
+                let dateObj = rawDateInput;
+                if (typeof rawDateInput === 'number' && rawDateInput > 10000) {
+                    dateObj = excelDateToJS(rawDateInput);
+                }
+
+                const rawDesc = map.desc ? getVal(row.getCell(map.desc)).toString() : '';
+                const matchDesc = rawDesc.toLowerCase();
+
+                const displayDate = dateObj instanceof Date ? dateObj.toISOString().split('T')[0] :
+                    (dateObj && typeof dateObj === 'string' ? dateObj : 'N/A');
+
+
+
+                // Offset check
+                if (r === config.offset + 1) {
+                    const rowValues = row.values.map(v => (v ? v.toString().toLowerCase() : ''));
+                    const rowText = rowValues.join(' ');
+                    if (HEAD_MATCH(rowText)) {
+                        offsetWarnings.push({ sheet: sheet.name, row: r, matches: ['Header Signature Detected'] });
+                    }
+                }
+
+                // --- Robust Skipping Logic ---
+                const hasDesc = rawDesc.trim().length > 0;
+                const hasAmount = Math.abs(amount) > 0.0001;
+
+                // 1. If completely empty, skip silently
+                if (!rawDateInput && !hasDesc && !hasAmount) return;
+
+                // 2. Strict Date Check
+                if (displayDate === 'N/A' || !rawDateInput) {
+                    // Only warn if there is other data
+                    if ((hasDesc || hasAmount) && showChecker) {
+                        console.warn(`[WARNING] Sheet "${sheet.name}" Row ${r}: Skipped due to invalid/missing Date. (Desc: "${rawDesc}", Amt: ${amount})`);
+                    }
+                    return;
+                }
+
+                // 3. Skip invalid amounts (already handled above, but double check)
+                if (isNaN(amount)) return;
+
+                processedRows++;
+
+                if (config.flip) amount *= -1;
+
+                // Accumulate Sheet Total (Net Flow)
+                sheetTotal += amount;
+                if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
+
+                if (!categoryVal && Math.abs(amount) > 0.01) {
+                    if (pType === 'cc') uncategorizedCC++; else uncategorizedBank++;
+                    uncategorizedDetails.push({ sheet: config.shortName, row: r, date: displayDate, desc: rawDesc });
+                }
+
+                // Define catLower for use in vendor/customer tracking
+                const catLower = categoryVal ? categoryVal.toString().trim().toLowerCase() : null;
+
+                if (categoryVal) {
+                    const catStr = categoryVal.toString().trim();
+
+                    if (!validCategories.has(catLower)) {
+                        illegalCategories.push({ value: catStr, sheet: sheet.name, row: r, date: displayDate });
+                    }
+
+                    // Use Display Name for stats if available, else usage case
+                    const displayCat = uniqueCategories.get(catLower)?.displayName || catStr;
+
+                    if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {}, sheets: {} };
+                    catStats[displayCat].total += amount;
+
+                    if (amount >= 0) {
+                        if (!catStats[displayCat].add) catStats[displayCat].add = 0; // init check
+                        catStats[displayCat].add = (catStats[displayCat].add || 0) + amount;
+                    } else {
+                        if (!catStats[displayCat].sub) catStats[displayCat].sub = 0;
+                        catStats[displayCat].sub = (catStats[displayCat].sub || 0) + amount;
+                    }
+
+                    // Track Sheets for Display Category
+                    if (!catStats[displayCat].sheets) catStats[displayCat].sheets = {};
+                    if (!catStats[displayCat].sheets[config.name]) {
+                        catStats[displayCat].sheets[config.name] = { add: 0, sub: 0, total: 0 };
+                    }
+                    const cDS = catStats[displayCat].sheets[config.name];
+                    if (amount >= 0) cDS.add += amount; else cDS.sub += amount;
+                    cDS.total += amount;
+
+                    const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+
+                    // Validate subcategory if one is provided
+                    if (subCatVal && sName !== '(No Sub-Cat)') {
+                        const sLower = sName.toLowerCase();
+                        if (!validSubCategories.has(sLower)) {
+                            illegalSubCategories.push({
+                                value: sName,
+                                category: displayCat,
+                                sheet: config.shortName,
+                                row: r,
+                                date: displayDate
+                            });
+                        }
+                    }
+
+                    catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
+
+                    // Capture Details
+                    if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
+                        detailsRows.push({
+                            date: displayDate,
+                            desc: rawDesc,
+                            subCat: sName,
+                            amount: amount,
                             sheet: sheet.name,
-                            row: r,
-                            date: displayDate
+                            row: r
                         });
                     }
                 }
 
-                catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
+                if (vendorVal) {
+                    const vStr = vendorVal.toString().trim();
+                    const vLower = vStr.toLowerCase();
+                    if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
 
-                // Capture Details
-                if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
-                    detailsRows.push({
-                        date: displayDate,
-                        desc: rawDesc,
-                        subCat: sName,
-                        amount: amount,
-                        sheet: sheet.name,
-                        row: r
-                    });
+                    const displayVendor = validVendors.get(vLower) || vStr;
+                    // Standardize: Expenses are Positive. Income is Negative.
+                    const vendAmount = amount * -1;
+
+                    if (!vendorStats[displayVendor]) {
+                        vendorStats[displayVendor] = { total: 0, add: 0, sub: 0, sheets: {} };
+                    }
+                    if (!vendorStats[displayVendor].sheets) vendorStats[displayVendor].sheets = {};
+
+                    if (vendAmount >= 0) {
+                        vendorStats[displayVendor].add += vendAmount;
+                    } else {
+                        vendorStats[displayVendor].sub += vendAmount;
+                    }
+                    vendorStats[displayVendor].total += vendAmount;
+
+                    if (!vendorStats[displayVendor].sheets[config.name]) {
+                        vendorStats[displayVendor].sheets[config.name] = { add: 0, sub: 0, total: 0 };
+                    }
+                    const vSheet = vendorStats[displayVendor].sheets[config.name];
+                    if (vendAmount >= 0) vSheet.add += vendAmount; else vSheet.sub += vendAmount;
+                    vSheet.total += vendAmount;
+
+
+                    // Track which report type this vendor is used in
+                    if (catLower) {
+                        const catConf = uniqueCategories.get(catLower);
+                        if (catConf && catConf.report) {
+                            if (!vendorReportUsage.has(displayVendor)) {
+                                vendorReportUsage.set(displayVendor, new Map());
+                            }
+                            const reportMap = vendorReportUsage.get(displayVendor);
+                            if (!reportMap.has(catConf.report)) {
+                                reportMap.set(catConf.report, []);
+                            }
+                            // Store first 2 examples per report type
+                            const displayCat = catConf.displayName || categoryVal.toString().trim();
+                            if (reportMap.get(catConf.report).length < 2) {
+                                reportMap.get(catConf.report).push({
+                                    sheet: sheet.name,
+                                    row: r,
+                                    category: displayCat,
+                                    date: displayDate
+                                });
+                            }
+                        }
+                    }
+
+                    const is1099 = vendor1099Map.get(vLower);
+                    if (is1099) {
+                        const t = (is1099.type || 'NEC');
+                        if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
+                        if (!vendor1099Stats[t][displayVendor]) {
+                            vendor1099Stats[t][displayVendor] = 0;
+                        }
+                        vendor1099Stats[t][displayVendor] += vendAmount;
+                    }
                 }
-            }
+                if (customerVal) {
+                    const cStr = customerVal.toString().trim();
+                    const cLower = cStr.toLowerCase();
+                    if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: sheet.name, row: r, date: displayDate });
 
-            if (vendorVal) {
-                const vStr = vendorVal.toString().trim();
-                const vLower = vStr.toLowerCase();
-                if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
+                    const displayCustomer = validCustomers.get(cLower) || cStr;
 
-                const displayVendor = validVendors.get(vLower) || vStr;
-                // Standardize: Expenses are Positive. Income is Negative.
-                // Current 'amount' logic: Expenses are Negative. So flip it.
-                const vendAmount = amount * -1;
-                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + vendAmount;
+                    // Existing customer stats logic (kept unchanged)
+                    if (!customerStats[displayCustomer]) {
+                        customerStats[displayCustomer] = { add: 0, sub: 0, total: 0, sheets: {} };
+                    }
+                    if (amount >= 0) {
+                        customerStats[displayCustomer].add += amount;
+                    } else {
+                        customerStats[displayCustomer].sub += amount;
+                    }
+                    customerStats[displayCustomer].total += amount;
+                    if (!customerStats[displayCustomer].sheets[config.name]) {
+                        customerStats[displayCustomer].sheets[config.name] = { add: 0, sub: 0, total: 0 };
+                    }
+                    const cSheetStat = customerStats[displayCustomer].sheets[config.name];
+                    if (amount >= 0) cSheetStat.add += amount; else cSheetStat.sub += amount;
+                    cSheetStat.total += amount;
 
-                // Track which report type this vendor is used in
-                if (catLower) {
-                    const catConf = uniqueCategories.get(catLower);
-                    if (catConf && catConf.report) {
-                        if (!vendorReportUsage.has(displayVendor)) {
-                            vendorReportUsage.set(displayVendor, new Map());
-                        }
-                        const reportMap = vendorReportUsage.get(displayVendor);
-                        if (!reportMap.has(catConf.report)) {
-                            reportMap.set(catConf.report, []);
-                        }
-                        // Store first 2 examples per report type
-                        const displayCat = catConf.displayName || categoryVal.toString().trim();
-                        if (reportMap.get(catConf.report).length < 2) {
-                            reportMap.get(catConf.report).push({
-                                sheet: sheet.name,
-                                row: r,
-                                category: displayCat,
-                                date: displayDate
-                            });
+                    // Track which report type this customer is used in
+                    if (catLower) {
+                        const catConf = uniqueCategories.get(catLower);
+                        if (catConf && catConf.report) {
+                            if (!customerReportUsage.has(displayCustomer)) {
+                                customerReportUsage.set(displayCustomer, new Map());
+                            }
+                            const reportMap = customerReportUsage.get(displayCustomer);
+                            if (!reportMap.has(catConf.report)) {
+                                reportMap.set(catConf.report, []);
+                            }
+                            // Store first 2 examples per report type
+                            const displayCat = catConf.displayName || categoryVal.toString().trim();
+                            if (reportMap.get(catConf.report).length < 2) {
+                                reportMap.get(catConf.report).push({
+                                    sheet: sheet.name,
+                                    row: r,
+                                    category: displayCat,
+                                    date: displayDate
+                                });
+                            }
                         }
                     }
                 }
-
-                const is1099 = vendor1099Map.get(vLower);
-                if (is1099) {
-                    const t = (is1099.type || 'NEC');
-                    if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
-                    if (!vendor1099Stats[t][displayVendor]) {
-                        vendor1099Stats[t][displayVendor] = 0;
-                    }
-                    vendor1099Stats[t][displayVendor] += vendAmount;
-                }
-            }
-            if (customerVal) {
-                const cStr = customerVal.toString().trim();
-                const cLower = cStr.toLowerCase();
-                if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: sheet.name, row: r, date: displayDate });
-
-                const displayCustomer = validCustomers.get(cLower) || cStr;
-                customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + amount;
-
-                // Track which report type this customer is used in
-                if (catLower) {
-                    const catConf = uniqueCategories.get(catLower);
-                    if (catConf && catConf.report) {
-                        if (!customerReportUsage.has(displayCustomer)) {
-                            customerReportUsage.set(displayCustomer, new Map());
-                        }
-                        const reportMap = customerReportUsage.get(displayCustomer);
-                        if (!reportMap.has(catConf.report)) {
-                            reportMap.set(catConf.report, []);
-                        }
-                        // Store first 2 examples per report type
-                        const displayCat = catConf.displayName || categoryVal.toString().trim();
-                        if (reportMap.get(catConf.report).length < 2) {
-                            reportMap.get(catConf.report).push({
-                                sheet: sheet.name,
-                                row: r,
-                                category: displayCat,
-                                date: displayDate
-                            });
-                        }
-                    }
-                }
+            } catch (rowError) {
+                if (showChecker) console.error(`[ERROR] Sheet "${sheet.name}" Row ${r}: Crash detected. ${rowError.message}`);
             }
         });
 
-        // Apply Accumulated Sheet Total to Linked Account (if defined)
+        console.log(`[Sheet Stats] "${config.shortName}": Processed ${processedRows} rows. Total Change: ${sheetTotal.toFixed(2)}`);
+
         if (config.linkedAccount) {
             const linkName = config.linkedAccount;
-            const conf = uniqueCategories.get(linkName.toLowerCase());
-            // Account Logic: 
-            // Assets (Bank): Dr (Normal). Net Flow (Inc-Exp). Increase = Dr.
-            // catStats storage: Dr is Negative.
-            // Flow: Income (+), Expense (-).
-            // +100 (Inc) -> Debit Bank -> Stats should decrease (more negative).
-            if (!catStats[linkName]) catStats[linkName] = { total: 0, subCats: {} };
+            const lConf = uniqueCategories.get(linkName.toLowerCase());
+            const aType = (lConf && lConf.accountType) ? lConf.accountType.toString().toLowerCase() : '';
+            const isAsset = aType.includes('asset') || aType.includes('bank') || aType.includes('cash');
+            const isLiability = aType.includes('liability') || aType.includes('credit') || aType.includes('cc') || aType.includes('payable') || aType.includes('loan');
+
+            if (!catStats[linkName]) catStats[linkName] = { total: 0, subCats: {}, sheets: {} };
+            if (!catStats[linkName].sheets) catStats[linkName].sheets = {};
+
             const previous = catStats[linkName].total;
-            catStats[linkName].total -= sheetTotal;
-            if (showChecker || showBS) {
-                console.log(`[Linkage Logic] Applied Sheet Total (${sheetTotal.toFixed(2)}) to Account "${linkName}". Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
+            // Polarity Logic: Assets increase with positive flow (Income). Liabilities/Equity decrease.
+            // Balance Sheet Items:
+            // Asset: Balance += sheetTotal
+            // Liability/Equity: Balance -= sheetTotal
+            if (isAsset) {
+                catStats[linkName].total += sheetTotal;
+            } else {
+                catStats[linkName].total -= sheetTotal;
             }
 
-            if (showChecker) {
-                console.log(`Applied Sheet Total (${sheetTotal}) to Linked Account "${linkName}". New Balance: ${catStats[linkName].total}`);
+            // Track sheet-level contribution to BS account
+            if (!catStats[linkName].sheets[config.name]) {
+                catStats[linkName].sheets[config.name] = { add: 0, sub: 0, total: 0 };
             }
+            const sStat = catStats[linkName].sheets[config.name];
+            if (sheetTotal >= 0) sStat.add += sheetTotal; else sStat.sub += sheetTotal;
+
+            if (isAsset) sStat.total += sheetTotal; else sStat.total -= sheetTotal;
+
+            console.log(`[Linkage Logic] Applied ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}". Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
         } else {
-            if (showChecker || showBS) {
-                console.log(`[Linkage Logic] Sheet "${config.name}" (Type: ${config.type}) has NO LINKED ACCOUNT. Total (${sheetTotal.toFixed(2)}) NOT applied to any Balance Sheet asset.`);
-            }
+            console.log(`[Linkage Logic] Sheet "${config.name}" (Type: ${config.type}) has NO LINKED ACCOUNT. Total (${sheetTotal.toFixed(2)}) NOT applied to any Balance Sheet asset.`);
         }
     }
 
@@ -870,157 +1221,196 @@ Example:
         console.log(`  Mapping: ${JSON.stringify(ledgerMap)}`);
     }
 
+    let ledgerTotal = 0;
+    let ledgerRows = 0;
     ledgerSheet.eachRow((row, r) => {
-        if (r <= ledgerHeaderRow) return;
-        const rawDate = ledgerMap.date ? getVal(row.getCell(ledgerMap.date)) : '';
-        const rawDesc = ledgerMap.desc ? getVal(row.getCell(ledgerMap.desc)) : '';
-        const cat = ledgerMap.category ? getVal(row.getCell(ledgerMap.category)) : '';
+        try {
+            if (r <= ledgerHeaderRow) return;
+            const rawDate = ledgerMap.date ? getVal(row.getCell(ledgerMap.date)) : '';
+            const rawDesc = ledgerMap.desc ? getVal(row.getCell(ledgerMap.desc)) : '';
+            const cat = ledgerMap.category ? getVal(row.getCell(ledgerMap.category)) : '';
 
-        // Ledger SubCat support
-        const subCatVal = ledgerMap.subCat ? getVal(row.getCell(ledgerMap.subCat)) : '';
+            // Ledger SubCat support
+            const subCatVal = ledgerMap.subCat ? getVal(row.getCell(ledgerMap.subCat)) : '';
 
-        const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
-        const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
-        const vendorVal = ledgerMap.vendor ? getVal(row.getCell(ledgerMap.vendor)) : '';
-        const customerVal = ledgerMap.customer ? getVal(row.getCell(ledgerMap.customer)) : '';
+            const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
+            const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
+            const vendorVal = ledgerMap.vendor ? getVal(row.getCell(ledgerMap.vendor)) : '';
+            const customerVal = ledgerMap.customer ? getVal(row.getCell(ledgerMap.customer)) : '';
 
-        // Skip truly empty rows or rows without dates (user requirement)
-        if (!rawDate && !cat && !rawDesc && !dr && !cr) return;
+            // Skip truly empty rows or rows without dates (user requirement)
+            if (!rawDate && !cat && !rawDesc && !dr && !cr) return;
 
-        if (!rawDate) {
-            if (cat || dr || cr) {
-                if (showChecker) console.log(`Ledger Row ${r}: SKIPPED (Missing Date). Rows must have dates.`);
+            if (!rawDate) {
+                if (cat || dr || cr) {
+                    if (showChecker) console.log(`Ledger Row ${r}: SKIPPED (Missing Date). Rows must have dates.`);
+                }
+                return;
             }
-            return;
-        }
 
-        if (cat) {
-            const catStr = cat.toString().trim();
-            const catLower = catStr.toLowerCase();
-            const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
+            if (cat) {
+                const catStr = cat.toString().trim();
+                const catLower = catStr.toLowerCase();
+                const displayDate = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A');
 
-            if (!validCategories.has(catLower)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
+                if (!validCategories.has(catLower)) illegalCategories.push({ value: catStr, sheet: 'Ledger', row: r, date: displayDate });
 
-            const conf = uniqueCategories.get(catLower);
+                const conf = uniqueCategories.get(catLower);
 
-            // Default to P&L logic if report type isn't explicit, but check valid config first
-            // Standardize: Credit positive (+), Debit negative (-)
-            // P&L: Income (+), Expense (-)
-            // BS: Liability (+), Equity (+), Asset (-)
-            const impact = (cr - dr);
+                const displayCat = conf?.displayName || catStr;
+                const isAsset = conf && conf.accountType && conf.accountType.toLowerCase().includes('asset');
+                const impact = isAsset ? (dr - cr) : (cr - dr);
 
-            const displayCat = conf?.displayName || catStr;
+                if (impact !== 0 || catStr) {
+                    ledgerRows++;
+                    ledgerTotal += impact;
+                }
 
-            if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {} };
-            catStats[displayCat].total += impact;
+                if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {}, sheets: {} };
+                if (!catStats[displayCat].sheets) catStats[displayCat].sheets = {};
+                catStats[displayCat].total += impact;
+                // Track Sheet contribution (using canonical name)
+                if (!catStats[displayCat].sheets[ledgerConfig.name]) catStats[displayCat].sheets[ledgerConfig.name] = { add: 0, sub: 0, total: 0 };
+                const lSheet = catStats[displayCat].sheets[ledgerConfig.name];
+                if (impact >= 0) lSheet.add += impact; else lSheet.sub += impact;
+                lSheet.total += impact;
 
-            // Ledger SubCat aggregation
-            const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+                // Ledger SubCat aggregation
+                const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
 
-            // Validate subcategory if one is provided
-            if (subCatVal && sName !== '(No Sub-Cat)') {
-                const sLower = sName.toLowerCase();
-                if (!validSubCategories.has(sLower)) {
-                    illegalSubCategories.push({
-                        value: sName,
-                        category: displayCat,
+                // Validate subcategory if one is provided
+                if (subCatVal && sName !== '(No Sub-Cat)') {
+                    const sLower = sName.toLowerCase();
+                    if (!validSubCategories.has(sLower)) {
+                        illegalSubCategories.push({
+                            value: sName,
+                            category: displayCat,
+                            sheet: 'Ledger',
+                            row: r,
+                            date: displayDate
+                        });
+                    }
+                }
+
+                catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + impact;
+
+                // Capture Details
+                if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
+                    detailsRows.push({
+                        date: displayDate,
+                        desc: rawDesc,
+                        subCat: sName,
+                        amount: impact,
                         sheet: 'Ledger',
-                        row: r,
-                        date: displayDate
+                        row: r
                     });
                 }
-            }
 
-            catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + impact;
+                // Vendor / Customer Stats from Ledger
+                if (vendorVal) {
+                    const vStr = vendorVal.toString().trim();
+                    const vLower = vStr.toLowerCase();
+                    if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
 
-            // Capture Details
-            if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
-                detailsRows.push({
-                    date: displayDate,
-                    desc: rawDesc,
-                    subCat: sName,
-                    amount: impact,
-                    sheet: 'Ledger',
-                    row: r
-                });
-            }
+                    const displayVendor = validVendors.get(vLower) || vStr;
+                    // Vendor: Net Debit (Expense)
+                    // Vendor Stats Structure: { total, add, sub, sheets }
+                    // Vendor Stats Structure: { total, add, sub, sheets }
+                    const impactVal = (dr - cr);
+                    if (!vendorStats[displayVendor]) vendorStats[displayVendor] = { total: 0, add: 0, sub: 0, sheets: {} };
+                    if (!vendorStats[displayVendor].sheets) vendorStats[displayVendor].sheets = {};
 
-            // Vendor / Customer Stats from Ledger
-            if (vendorVal) {
-                const vStr = vendorVal.toString().trim();
-                const vLower = vStr.toLowerCase();
-                if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
+                    if (impactVal >= 0) vendorStats[displayVendor].add += impactVal; else vendorStats[displayVendor].sub += impactVal;
+                    vendorStats[displayVendor].total += impactVal;
 
-                const displayVendor = validVendors.get(vLower) || vStr;
-                // Vendor: Net Debit (Expense)
-                const impactVal = (dr - cr);
-                vendorStats[displayVendor] = (vendorStats[displayVendor] || 0) + impactVal;
+                    // Ensure sheets exists before accessing
+                    if (!vendorStats[displayVendor].sheets) vendorStats[displayVendor].sheets = {};
+                    if (!vendorStats[displayVendor].sheets[ledgerConfig.name]) vendorStats[displayVendor].sheets[ledgerConfig.name] = { add: 0, sub: 0, total: 0 };
+                    const vSheet = vendorStats[displayVendor].sheets[ledgerConfig.name];
+                    if (impactVal >= 0) vSheet.add += impactVal; else vSheet.sub += impactVal;
+                    vSheet.total += impactVal;
 
-                // Track which report type this vendor is used in
-                const catConf = uniqueCategories.get(catLower);
-                if (catConf && catConf.report) {
-                    if (!vendorReportUsage.has(displayVendor)) {
-                        vendorReportUsage.set(displayVendor, new Map());
+                    // Track which report type this vendor is used in
+                    const catConf = uniqueCategories.get(catLower);
+                    if (catConf && catConf.report) {
+                        if (!vendorReportUsage.has(displayVendor)) {
+                            vendorReportUsage.set(displayVendor, new Map());
+                        }
+                        const reportMap = vendorReportUsage.get(displayVendor);
+                        if (!reportMap.has(catConf.report)) {
+                            reportMap.set(catConf.report, []);
+                        }
+                        // Store first 2 examples per report type
+                        if (reportMap.get(catConf.report).length < 2) {
+                            reportMap.get(catConf.report).push({
+                                sheet: 'Ledger',
+                                row: r,
+                                category: displayCat,
+                                date: displayDate
+                            });
+                        }
                     }
-                    const reportMap = vendorReportUsage.get(displayVendor);
-                    if (!reportMap.has(catConf.report)) {
-                        reportMap.set(catConf.report, []);
+
+                    const is1099 = vendor1099Map.get(vLower);
+                    if (is1099) {
+                        const t = (is1099.type || 'NEC');
+                        if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
+                        if (!vendor1099Stats[t][displayVendor]) {
+                            vendor1099Stats[t][displayVendor] = 0;
+                        }
+                        vendor1099Stats[t][displayVendor] += impactVal;
                     }
-                    // Store first 2 examples per report type
-                    if (reportMap.get(catConf.report).length < 2) {
-                        reportMap.get(catConf.report).push({
-                            sheet: 'Ledger',
-                            row: r,
-                            category: displayCat,
-                            date: displayDate
-                        });
+                }
+                if (customerVal) {
+                    const cStr = customerVal.toString().trim();
+                    const cLower = cStr.toLowerCase();
+                    if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: 'Ledger', row: r, date: displayDate });
+
+                    const displayCustomer = validCustomers.get(cLower) || cStr;
+                    // Customer: Net Credit (Income)
+                    const custImpact = (cr - dr);
+                    if (!customerStats[displayCustomer]) customerStats[displayCustomer] = { total: 0, add: 0, sub: 0, sheets: {} };
+                    if (!customerStats[displayCustomer].sheets) customerStats[displayCustomer].sheets = {};
+
+                    if (custImpact >= 0) customerStats[displayCustomer].add += custImpact; else customerStats[displayCustomer].sub += custImpact;
+                    customerStats[displayCustomer].total += custImpact;
+
+                    if (!customerStats[displayCustomer].sheets[ledgerConfig.name]) customerStats[displayCustomer].sheets[ledgerConfig.name] = { add: 0, sub: 0, total: 0 };
+                    const cSheet = customerStats[displayCustomer].sheets[ledgerConfig.name];
+                    if (custImpact >= 0) cSheet.add += custImpact; else cSheet.sub += custImpact;
+                    cSheet.total += custImpact;
+
+                    // Track which report type this customer is used in
+                    const catConf = uniqueCategories.get(catLower);
+                    if (catConf && catConf.report) {
+                        if (!customerReportUsage.has(displayCustomer)) {
+                            customerReportUsage.set(displayCustomer, new Map());
+                        }
+                        const reportMap = customerReportUsage.get(displayCustomer);
+                        if (!reportMap.has(catConf.report)) {
+                            reportMap.set(catConf.report, []);
+                        }
+                        // Store first 2 examples per report type
+                        if (reportMap.get(catConf.report).length < 2) {
+                            reportMap.get(catConf.report).push({
+                                sheet: 'Ledger',
+                                row: r,
+                                category: displayCat,
+                                date: displayDate
+                            });
+                        }
                     }
                 }
 
-                const is1099 = vendor1099Map.get(vLower);
-                if (is1099) {
-                    const t = (is1099.type || 'NEC');
-                    if (!vendor1099Stats[t]) vendor1099Stats[t] = {};
-                    if (!vendor1099Stats[t][displayVendor]) {
-                        vendor1099Stats[t][displayVendor] = 0;
-                    }
-                    vendor1099Stats[t][displayVendor] += impactVal;
-                }
+                // (Integration block removed - handled via standard catStats logic)
             }
-            if (customerVal) {
-                const cStr = customerVal.toString().trim();
-                const cLower = cStr.toLowerCase();
-                if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: 'Ledger', row: r, date: displayDate });
-
-                const displayCustomer = validCustomers.get(cLower) || cStr;
-                // Customer: Net Credit (Income)
-                customerStats[displayCustomer] = (customerStats[displayCustomer] || 0) + (cr - dr);
-
-                // Track which report type this customer is used in
-                const catConf = uniqueCategories.get(catLower);
-                if (catConf && catConf.report) {
-                    if (!customerReportUsage.has(displayCustomer)) {
-                        customerReportUsage.set(displayCustomer, new Map());
-                    }
-                    const reportMap = customerReportUsage.get(displayCustomer);
-                    if (!reportMap.has(catConf.report)) {
-                        reportMap.set(catConf.report, []);
-                    }
-                    // Store first 2 examples per report type
-                    if (reportMap.get(catConf.report).length < 2) {
-                        reportMap.get(catConf.report).push({
-                            sheet: 'Ledger',
-                            row: r,
-                            category: displayCat,
-                            date: displayDate
-                        });
-                    }
-                }
-            }
-
-            // (Integration block removed - handled via standard catStats logic)
+        } catch (ledgerRowError) {
+            if (showChecker) console.error(`[ERROR] Ledger Row ${r}: ${ledgerRowError.message}`);
         }
     });
+
+    console.log(`[Sheet Stats] "${ledgerConfig.shortName}": Processed ${ledgerRows} rows. Total Change: ${ledgerTotal.toFixed(2)}`);
+    console.log(`[Linkage Logic] Sheet "${ledgerConfig.name}" (Type: Ledger) has NO LINKED ACCOUNT. Total (${ledgerTotal.toFixed(2)}) NOT applied to any Balance Sheet asset.`);
 
     // --- 4. Prepare Reports ---
     const reports = { pl: [], bs: [] };
@@ -1030,7 +1420,12 @@ Example:
         .map(conf => conf.displayName)
         .sort();
 
-    reports.pl = pnlNames.map(n => ({ label: n, value: catStats[n] ? catStats[n].total : 0 }));
+    reports.pl = pnlNames.map(n => ({
+        label: n,
+        value: catStats[n] ? catStats[n].total : 0,
+        sheets: catStats[n] ? catStats[n].sheets : {},
+        subCats: catStats[n] ? catStats[n].subCats : {}
+    }));
     const netIncome = reports.pl.reduce((a, b) => a + b.value, 0);
 
     // Balance Sheet Items
@@ -1041,12 +1436,14 @@ Example:
 
     const bsItems = bsNames.map(n => {
         let val = catStats[n] ? catStats[n].total : 0;
-        // Flip sign for Assets so they display positively (if Dr > Cr)
-        const conf = uniqueCategories.get(n.toLowerCase());
-        if (conf && conf.accountType && conf.accountType.toLowerCase().includes('asset')) {
-            val *= -1;
-        }
-        return { label: n, value: val };
+        // Since linkage now handles polarity (Asset += sheetTotal, Liability -= sheetTotal),
+        // catStats[n].total is the actual accounting balance.
+        return {
+            label: n,
+            value: val,
+            sheets: catStats[n] ? catStats[n].sheets : {},
+            subCats: catStats[n] ? catStats[n].subCats : {}
+        };
     });
 
     reports.bs = [
@@ -1054,65 +1451,159 @@ Example:
     ];
 
     // Prepare Vendor / Customer Reports
-    reports.vendors = Object.keys(vendorStats).map(v => ({ label: v, value: vendorStats[v] })).sort((a, b) => b.value - a.value);
+    reports.vendors = Object.keys(vendorStats).map(v => ({
+        label: v,
+        add: vendorStats[v].add || 0,
+        sub: vendorStats[v].sub || 0,
+        value: vendorStats[v].total || 0,
+        sheets: vendorStats[v].sheets || {}
+    })).sort((a, b) => b.value - a.value);
     reports.vendors1099NEC = Object.keys(vendor1099Stats.NEC).map(v => ({ label: v, value: vendor1099Stats.NEC[v] })).sort((a, b) => b.value - a.value);
     reports.vendors1099INT = Object.keys(vendor1099Stats.INT).map(v => ({ label: v, value: vendor1099Stats.INT[v] })).sort((a, b) => b.value - a.value);
-    reports.customers = Object.keys(customerStats).map(c => ({ label: c, value: customerStats[c] })).sort((a, b) => b.value - a.value);
-    reports.customers = Object.keys(customerStats).map(c => ({ label: c, value: customerStats[c] })).sort((a, b) => b.value - a.value);
+
+    reports.customers = Object.keys(customerStats).map(c => ({
+        label: c,
+        add: customerStats[c].add,
+        sub: customerStats[c].sub,
+        value: customerStats[c].total,
+        sheets: customerStats[c].sheets
+    })).sort((a, b) => b.value - a.value);
+    // Vendor report with sub breakdown
+    reports.vendors = Object.keys(vendorStats).map(v => ({
+        label: v,
+        add: vendorStats[v].add,
+        sub: vendorStats[v].sub,
+        value: vendorStats[v].total,
+        sheets: vendorStats[v].sheets
+    })).sort((a, b) => b.value - a.value);
 
     // --- 5. Console Output ---
-    function printSection(title, rows) {
+    // --- 5. Console Output ---
+    function printDetailedTable(title, rows, sheetList, sheetNameMap = {}, label = "Category") {
         console.log(`\n--- ${title} ---`);
         if (!rows.length) { console.log('(No Data)'); return; }
-        const max = Math.max(...rows.map(r => r.label.length), 10);
-        rows.forEach(r => console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`));
+
+        const LABEL_WIDTH = 30;
+        const COL_WIDTH = 12;
+
+        // Header 1
+        const SECTION_WIDTH = (sheetList.length + 1) * COL_WIDTH;
+
+        const h1 = " ".repeat(LABEL_WIDTH) +
+            "Net".padStart(COL_WIDTH) + " | " +
+            "Additions".padStart(SECTION_WIDTH) + " | " +
+            "Subtractions".padStart(SECTION_WIDTH);
+        console.log(h1);
+
+        // Header 2
+        let h2 = label.padEnd(LABEL_WIDTH);
+        // Net (Grand Total)
+        h2 += "Grand Total".padStart(COL_WIDTH) + " | ";
+
+        // Additions Columns - use short names
+        sheetList.forEach(s => {
+            const displayName = sheetNameMap[s] || s;
+            h2 += displayName.substring(0, COL_WIDTH - 1).padStart(COL_WIDTH);
+        });
+        h2 += "Total".padStart(COL_WIDTH) + " | ";
+        // Subtractions Columns
+        sheetList.forEach(s => {
+            const displayName = sheetNameMap[s] || s;
+            h2 += displayName.substring(0, COL_WIDTH - 1).padStart(COL_WIDTH);
+        });
+        h2 += "Total".padStart(COL_WIDTH);
+
+        console.log(h2);
+        console.log("-".repeat(h2.length));
+
+        rows.forEach(r => {
+            let line = r.label.substring(0, LABEL_WIDTH - 1).padEnd(LABEL_WIDTH);
+            const sheets = r.sheets || {};
+
+            // Net
+            const signedNet = r.value;
+            line += signedNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH) + " | ";
+
+            // Additions
+            let rowAddTotal = 0;
+            sheetList.forEach(s => {
+                const val = (sheets[s] ? sheets[s].add : 0) || 0;
+                rowAddTotal += val;
+                // Use absolute for display in additions column
+                const disp = Math.abs(val);
+                line += disp === 0 ? " ".padStart(COL_WIDTH) : disp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH);
+            });
+            line += Math.abs(rowAddTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH) + " | ";
+
+            // Subtractions
+            let rowSubTotal = 0;
+            sheetList.forEach(s => {
+                const val = (sheets[s] ? sheets[s].sub : 0) || 0;
+                rowSubTotal += val;
+                // Use absolute for display in subtractions column
+                const disp = Math.abs(val);
+                line += disp === 0 ? " ".padStart(COL_WIDTH) : disp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH);
+            });
+            line += Math.abs(rowSubTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH);
+
+            console.log(line);
+
+            // Print subcategory breakdowns if available
+            if (r.subCats && Object.keys(r.subCats).length > 0) {
+                Object.entries(r.subCats).forEach(([subName, subTotal]) => {
+                    if (subName === '(No Sub-Cat)') return; // Skip the default
+                    const subLine = `  > ${subName}`.substring(0, LABEL_WIDTH - 1).padEnd(LABEL_WIDTH) +
+                        subTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH) +
+                        " ".repeat(h2.length - LABEL_WIDTH - COL_WIDTH); // Fill rest with spaces
+                    console.log(subLine);
+                });
+            }
+        });
     }
 
+    // Collect all sheet names for columns (Order: Configured Sheets...)
+    const distinctSheets = new Set();
+    const sheetNameMap = {}; // Map full name -> short name
+    sheetConfigs.forEach(s => {
+        distinctSheets.add(s.name);
+        sheetNameMap[s.name] = s.shortName;
+    });
+    // Ensure Ledger is included if it was processed
+    if (Object.keys(catStats).some(c => catStats[c].sheets && catStats[c].sheets[ledgerConfig.name])) {
+        distinctSheets.add(ledgerConfig.name);
+        sheetNameMap[ledgerConfig.name] = ledgerConfig.shortName || ledgerConfig.name;
+    }
+    const reportSheetList = Array.from(distinctSheets);
+
+    // PL sub report with two-level header
     if (showAll || showPL || showPLSub) {
-        console.log(`\n--- PROFIT & LOSS ---`);
-        if (!reports.pl.length) console.log('(No Data)');
-        else {
-            const max = Math.max(...reports.pl.map(r => r.label.length), 10);
-            reports.pl.forEach(r => {
-                console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
-                // Sub-Category Detail
-                if (showPLSub && catStats[r.label] && catStats[r.label].subCats) {
-                    const subs = catStats[r.label].subCats;
-                    const subKeys = Object.keys(subs).filter(k => Math.abs(subs[k]) > 0.01);
-                    if (!(subKeys.length === 1 && subKeys[0] === '(No Sub-Cat)')) {
-                        subKeys.sort().forEach(sub => {
-                            console.log(`   > ${sub.padEnd(max + 1)} : ${subs[sub].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
-                        });
-                    }
-                }
-            });
+        if (showPLSub) {
+            printDetailedTable('PROFIT & LOSS (Detailed)', reports.pl, reportSheetList, sheetNameMap);
+        } else {
+            console.log(`\n--- PROFIT & LOSS ---`);
+            if (!reports.pl.length) console.log('(No Data)');
+            else {
+                const max = Math.max(...reports.pl.map(r => r.label.length), 10);
+                reports.pl.forEach(r => {
+                    console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                });
+            }
         }
-        console.log(`\n=== NET INCOME: ${netIncome.toFixed(2)} ===\n`);
+        console.log(`\n=== NET INCOME: ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ===\n`);
     }
+    // BS sub report with two-level header
     if (showAll || showBS || showBSSub) {
-        console.log(`\n--- BALANCE SHEET ---`);
-        if (!reports.bs.length) console.log('(No Data)');
-        else {
-            const max = Math.max(...reports.bs.map(r => r.label.length), 10);
-            reports.bs.forEach(r => {
-                console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
-                // Sub-Category Detail
-                if (showBSSub && catStats[r.label] && catStats[r.label].subCats) {
-                    const subs = catStats[r.label].subCats;
-
-                    // Determine flip based on Asset type (same logic as main row)
-                    const conf = uniqueCategories.get(r.label.toLowerCase());
-                    const flip = (conf && conf.accountType && conf.accountType.toLowerCase().includes('asset')) ? -1 : 1;
-
-                    const subKeys = Object.keys(subs).filter(k => Math.abs(subs[k]) > 0.01);
-                    if (!(subKeys.length === 1 && subKeys[0] === '(No Sub-Cat)')) {
-                        subKeys.sort().forEach(sub => {
-                            const val = subs[sub] * flip;
-                            console.log(`   > ${sub.padEnd(max + 1)} : ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
-                        });
-                    }
-                }
-            });
+        if (showBSSub) {
+            printDetailedTable('BALANCE SHEET (Detailed)', reports.bs, reportSheetList, sheetNameMap);
+        } else {
+            console.log(`\n--- BALANCE SHEET ---`);
+            if (!reports.bs.length) console.log('(No Data)');
+            else {
+                const max = Math.max(...reports.bs.map(r => r.label.length), 10);
+                reports.bs.forEach(r => {
+                    console.log(`${r.label.padEnd(max + 5)} : ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                });
+            }
         }
         console.log('');
     }
@@ -1234,7 +1725,40 @@ Example:
             console.log(`\n[SUCCESS] Generated 1099 CSV: ${csvPath}`);
         }
     }
-    if (showAll || showCustomer) printSection('CUSTOMER INCOME', reports.customers);
+    // Customer report (already handles sub)
+    if (showAll || showCustomer || showCustomerSub) {
+        if (showCustomerSub) {
+            printDetailedTable('CUSTOMER INCOME (Detailed)', reports.customers, reportSheetList, sheetNameMap, "Customer");
+        } else {
+            console.log(`\n--- CUSTOMER INCOME ---`);
+            if (reports.customers.length === 0) console.log('(No Data)');
+            else {
+                const h = `Customer`.padEnd(30) + `Net`.padStart(15) + `Additions`.padStart(15) + `Subtractions`.padStart(15);
+                console.log(h);
+                console.log('-'.repeat(h.length));
+                reports.customers.forEach(r => {
+                    console.log(`${r.label.substring(0, 29).padEnd(30)}` +
+                        `${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}` +
+                        `${r.add.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}` +
+                        `${r.sub.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+                });
+            }
+        }
+    }
+
+    // Vendor sub report
+    if (showAll || showVendorSub) {
+        if (showVendorSub) {
+            printDetailedTable('VENDOR SPENDING (Detailed)', reports.vendors, reportSheetList, sheetNameMap, "Vendor");
+        } else {
+            // Already shown in main "Vendor Spending" block if showVendor is on, 
+            // but if showVendorSub is ON and showVendor is OFF (edge case), we show detailed.
+            // If both, we might duplicate? 
+            // The main vendor block shows 1099 info. This shows stats.
+            // Let's assume if showVendor is on, we don't need this basic block unless sub is requested.
+            // But the original code printed it.
+        }
+    }
 
     if (showDetails) {
         console.log(`\n--- DETAILS: "${targetDetailsCategory}" ---`);
@@ -1254,6 +1778,39 @@ Example:
             console.log(`-`.repeat(85));
             console.log(`TOTAL`.padEnd(67) + total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(12));
         }
+    }
+
+    // --- Global Integrity Check: Total Tie ---
+    // The sum of all net flows across all transaction sheets (after polarity)
+    // must equal (Net Income) + (Sum of Balance Sheet changes).
+    let globalFlowTotal = 0;
+    const sheetFlows = [];
+    sheetConfigs.forEach(conf => {
+        // Find total for this sheet across all categories
+        let sheetSum = 0;
+        Object.keys(catStats).forEach(cat => {
+            if (catStats[cat].sheets && catStats[cat].sheets[conf.name]) {
+                sheetSum += catStats[cat].sheets[conf.name].total;
+            }
+        });
+        globalFlowTotal += sheetSum;
+        sheetFlows.push({ name: conf.shortName, flow: sheetSum });
+    });
+
+    // Net Income + Balance Sheet Changes
+    const bsChangeTotal = reports.bs.reduce((a, b) => a + b.value, 0);
+    const accountingTotal = netIncome + bsChangeTotal;
+
+    console.log('\n--- GLOBAL INTEGRITY CHECK ---');
+    console.log(`Total Sheet Flow (Bank + CC + Ledger) : ${globalFlowTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+    console.log(`Sum of Net Income + BS Changes         : ${accountingTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`);
+
+    const discrepancy = Math.abs(globalFlowTotal - accountingTotal);
+    if (discrepancy < 0.01) {
+        console.log('✅ [PASS] Total Tie: Financial reports are internally consistent.');
+    } else {
+        console.warn(`[!] WARNING: Total Tie mismatch. Discrepancy: ${discrepancy.toFixed(2)}`);
+        console.warn('    Check for unlinked transaction sheets or manual category overrides.');
     }
 
     const hasIssues = uncategorizedDetails.length > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0 || illegalSubCategories.length > 0;
@@ -1288,12 +1845,20 @@ Example:
             }
         });
 
+
+
         // Combined Missing Vendors Report
         if (illegalVendors.length > 0) {
             console.log('\n--- MISSING VENDORS FOR SETUP (Copy/Paste) ---');
             const allUniqueVendors = Array.from(new Set(illegalVendors.map(x => x.value))).sort();
             allUniqueVendors.forEach(v => console.log(v));
         }
+    }
+
+    // Output compliance errors if any
+    if (global.complianceErrors && global.complianceErrors.length > 0) {
+        console.error('\n--- COMPLIANCE ERRORS ---');
+        global.complianceErrors.forEach(err => console.error(err));
     }
 
     if (duplicateCategories.length) {
