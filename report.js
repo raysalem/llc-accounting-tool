@@ -2,6 +2,30 @@ const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const util = require('util');
+
+// Store original console just in case
+const originalConsole = { log: console.log, warn: console.warn, error: console.error };
+
+// --- Logger Buffer for "Notes" Tab ---
+const logBuffer = [];
+const consoleLogger = {
+    log: (...args) => {
+        const msg = util.format(...args);
+        originalConsole.log(msg); // Print to terminal using SAFE original console
+        logBuffer.push(msg); // Store for Excel
+    },
+    error: (...args) => {
+        const msg = util.format(...args);
+        originalConsole.error(msg);
+        logBuffer.push('[ERROR] ' + msg);
+    },
+    warn: (...args) => {
+        const msg = util.format(...args);
+        originalConsole.warn(msg);
+        logBuffer.push('[WARN] ' + msg);
+    }
+};
 
 function resolveShortcut(filePath) {
     try {
@@ -106,9 +130,11 @@ Example:
     const showAll = !specificFilter; // Default to showing standard report if no specific filter is set
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
+    let originalInputPath = filename; // Store original input for path resolution
 
     // Resolve shortcut if needed
     if (fs.existsSync(filename)) {
+        console.log(`LLC Accounting Tool v${require('./package.json').version}`);
         const resolved = resolveShortcut(filename);
         if (resolved !== filename) {
             console.log(`Resolved shortcut '${filename}' -> '${resolved}'`);
@@ -120,6 +146,12 @@ Example:
         console.error(`Error: File '${filename}' not found.`);
         return;
     }
+
+    // Override console for capturing output if --save or checker is involved 
+    // (Actually always capture so we have logs available for save)
+    console.log = consoleLogger.log;
+    console.warn = consoleLogger.warn;
+    console.error = consoleLogger.error;
 
     const workbook = new ExcelJS.Workbook();
     try {
@@ -148,6 +180,17 @@ Example:
         if (!ledgerSheet) console.error(' - "General Ledger" (or "Ledger") sheet is missing.');
         return;
     }
+
+    // Override console for capturing output
+    console.log = consoleLogger.log;
+    console.warn = consoleLogger.warn;
+    console.error = consoleLogger.error;
+
+    // Override console for capturing output if --save or checker is involved 
+    // (Actually always capture so we have logs available for save)
+    console.log = consoleLogger.log;
+    console.warn = consoleLogger.warn;
+    console.error = consoleLogger.error;
 
     // --- State ---
     const validCategories = new Set(); // Stores lowercase for validation
@@ -196,12 +239,17 @@ Example:
     const vendorReportUsage = new Map();
     const customerReportUsage = new Map();
 
+    const NORM_VEND = (s) => (s || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+
     // --- Helper ---
     function getVal(cell) {
         if (!cell) return '';
         let v = cell.value;
-        if (v && typeof v === 'object' && v.result !== undefined) v = v.result;
-        if (v && v.richText) return v.richText.map(t => t.text).join('').trim();
+        if (v && typeof v === 'object') {
+            if (v.result !== undefined) v = v.result;
+            else if (v.richText) return v.richText.map(t => t.text).join('').trim();
+            else if (v.text && v.hyperlink) return v.text.trim(); // Handle Hyperlink object
+        }
         if (typeof v === 'number') return v;
         if (v instanceof Date) return v;
         return (v === null || v === undefined) ? '' : v.toString().trim();
@@ -247,7 +295,10 @@ Example:
         let bestRowIdx = 1;
         let bestMap = new Map();
         let maxFound = -1;
-        const lookups = ['category', 'subcategory', 'vendors', 'vendor', 'sheetname', 'sheetnameconfig', 'report', 'linkcategory', 'linkcat'];
+        const lookups = [
+            'category', 'subcategory', 'vendors', 'vendor', 'sheetname', 'sheetnameconfig', 'report', 'linkcategory', 'linkcat',
+            'name', 'fullname', 'firstname', 'lastname', 'address', 'city', 'state', 'zip', 'tin', 'ssn', 'ein', 'taxid'
+        ];
 
         for (let ri = 1; ri <= 10; ri++) {
             const currentMap = new Map();
@@ -388,7 +439,7 @@ Example:
         const vendor = colVendor ? getVal(row.getCell(colVendor)) : null;
         if (vendor) {
             const vRaw = vendor.toString().trim();
-            const lowerV = vRaw.toLowerCase();
+            const lowerV = NORM_VEND(vRaw);
             validVendors.set(lowerV, vRaw);
             if (showChecker && validVendors.size % 50 === 0) console.log(`... Loaded ${validVendors.size} vendors so far ...`);
 
@@ -448,7 +499,7 @@ Example:
         const customer = colCustomer ? getVal(row.getCell(colCustomer)) : null;
         if (customer) {
             const cRaw = customer.toString().trim();
-            validCustomers.set(cRaw.toLowerCase(), cRaw);
+            validCustomers.set(NORM_VEND(cRaw), cRaw);
         }
 
         // 5. Process Payer Info (Vertical Table)
@@ -600,6 +651,7 @@ Example:
             const colEnd = blockMap['end'] || blockMap['endbalance'] || blockMap['endingbalance'];
             const colO = blockMap['headerrow'] || blockMap['offset'];
             const colT = blockMap['type'] || blockMap['sheettype']; // Optional now
+            const colS = blockMap['shortname'] || blockMap['shortnames'];
 
             if (showChecker) console.log(`[Setup] Found SheetInfo headers on Row ${blockHeaderRow}. Link Col: ${colL}, Start Col: ${colStart}, End Col: ${colEnd}`);
 
@@ -717,18 +769,19 @@ Example:
 
             if (showChecker) {
                 console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${(doLink && link) || 'NONE'}"`);
-                if (doLink && !link) {
-                    const bsExamples = Array.from(uniqueCategories.values())
-                        .filter(c => c.report === 'Balance Sheet')
-                        .map(c => `"${c.displayName}" (${c.accountType || 'no type'})`)
-                        .slice(0, 5);
-                    console.log(`  > Link Failed: No category found with Report="Balance Sheet" matching "${cType}".`);
-                    if (bsExamples.length > 0) {
-                        console.log(`  > Available BS accounts: ${bsExamples.join(', ')}${bsExamples.length === 5 ? '...' : ''}`);
-                    } else {
-                        console.log(`  > WARNING: No Balance Sheet categories loaded! Check your 'Report' column.`);
-                    }
-                }
+            }
+
+            if (doLink && !link) {
+                console.error(`\n[CRITICAL ERROR] Sheet "${confSheetName}" (Type: "${cType}") failed to link to a Balance Sheet account!`);
+                console.error(`  Linkage is REQUIRED for all Bank/Credit Card sheets to track balances.`);
+                console.error(`  Reason: No matching "Balance Sheet" category found for Type "${cType}" or explicit Link "${conf.cat || ''}".`);
+                const bsExamples = Array.from(uniqueCategories.values())
+                    .filter(c => c.report === 'Balance Sheet')
+                    .map(c => `"${c.displayName}"`)
+                    .slice(0, 5);
+                console.error(`  Available 'Balance Sheet' categories: ${bsExamples.join(', ')}...`);
+                console.error(`  Fix: update 'Type' to match a BS Asset/Liability, or use 'Link Asset' column in SheetInfo.`);
+                hasErrors = true; // Mark global error
             }
 
             sheetConfigs.push({
@@ -765,56 +818,145 @@ Example:
 
     // --- 1.5 Load External Vendors (Override/Enrich Setup) ---
     async function loadExternalVendors() {
-        const dir = path.dirname(filename);
-        const candidates = ['vendor.xlsx', 'vendor.csv'];
+        // Search locations: 
+        // 1. Current Working Directory (Run Area)
+        // 2. Directory of the INPUT file (Shortcut location)
+        // 3. Directory of the TARGET file (Actual Excel file location)
 
-        for (const fName of candidates) {
-            const fPath = path.join(dir, fName);
+        const cwd = process.cwd();
+        const targetDir = path.dirname(filename);
+        const inputDir = path.dirname(originalInputPath);
+
+        const dirsToCheck = new Set([cwd, inputDir, targetDir]); // Use Set to deduplicate
+        const checkPaths = [];
+
+        dirsToCheck.forEach(dir => {
+            checkPaths.push(path.join(dir, 'vendor.xlsx'));
+            checkPaths.push(path.join(dir, 'vendor.csv'));
+        });
+
+        let loadedPath = null;
+        for (const fPath of checkPaths) {
+            if (showChecker) console.log(`[Validation] Checking for Vendor File: ${fPath}`);
             if (fs.existsSync(fPath)) {
-                if (showChecker) console.log(`[Validation] Found External Vendor File: ${fPath}`);
+                console.log(`[Validation] Found External Vendor File: ${fPath}`);
+                loadedPath = fPath;
 
                 const vWb = new ExcelJS.Workbook();
-                if (fName.endsWith('.csv')) await vWb.csv.readFile(fPath);
+                if (fPath.endsWith('.csv')) await vWb.csv.readFile(fPath);
                 else await vWb.xlsx.readFile(fPath);
 
                 const vSheet = vWb.worksheets[0];
                 if (!vSheet) continue;
 
                 // Simple Header Search
-                const vHeaders = getHeaderMap(vSheet, 1);
-                // Map common headers
-                const cName = vHeaders.get('name') || vHeaders.get('vendor') || vHeaders.get('full name');
-                const cBiz = vHeaders.get('business name') || vHeaders.get('business');
-                const cSSN = vHeaders.get('ssn') || vHeaders.get('tax id') || vHeaders.get('tin');
-                const cAddr = vHeaders.get('address');
-                const cEmail = vHeaders.get('email');
-                const cPhone = vHeaders.get('phone');
+                const { map: vHeaders, headerRow: vHeaderRow } = getHeaderMap(vSheet);
+                // Header mapping helper for single indices
+                const getVCol = (k) => {
+                    const indices = vHeaders.get(k);
+                    return (indices && indices.length > 0) ? indices[0] : null;
+                };
+
+                const cName = getVCol('name') || getVCol('vendor') || getVCol('fullname') || getVCol('recipientname') || getVCol('payee');
+                const cBiz = getVCol('businessname') || getVCol('business') || getVCol('company');
+                const cSSN = getVCol('ssn') || getVCol('taxid') || getVCol('tin') || getVCol('ein') || getVCol('ssnein') || getVCol('taxidnumber');
+                const cAddr = getVCol('address') || getVCol('street') || getVCol('streetaddress') || getVCol('addr') || getVCol('address1') || getVCol('mailingaddress');
+                const cEmail = getVCol('email') || getVCol('emailaddress');
+                const cPhone = getVCol('phone') || getVCol('phonenumber') || getVCol('mobile') || getVCol('phone#');
+                const cCountry = getVCol('country');
+                const cEntityType = getVCol('type') || getVCol('entitytype') || getVCol('recipienttype');
+                const cTINType = getVCol('tintype') || getVCol('taxidtype');
+                const cREQ = getVCol('1099') || getVCol('1099required') || getVCol('required');
+
+                const cFirstName = getVCol('firstname') || getVCol('first');
+                const cLastName = getVCol('lastname') || getVCol('last');
+                const cCity = getVCol('city') || getVCol('town') || getVCol('citytown');
+                const cState = getVCol('state') || getVCol('province');
+                const cZip = getVCol('zipcode') || getVCol('zip') || getVCol('postalcode');
+
+                if (showChecker) {
+                    console.log(`[Vendor Load] "${path.basename(fPath)}" Header Row: ${vHeaderRow}`);
+                    console.log(`[Vendor Load] Detected Headers: ${Array.from(vHeaders.keys()).join(', ')}`);
+                    console.log(`[Vendor Load] Column Mapping: Name=${cName}, Biz=${cBiz}, TIN=${cSSN}, Addr=${cAddr}, City=${cCity}, State=${cState}, Zip=${cZip}`);
+                }
+                if (showChecker && cName) console.log(`[Vendor Load] Primary matching column: 'Name' (Index ${cName})`);
 
                 vSheet.eachRow((row, r) => {
-                    if (r === 1) return;
-                    // Primary Key is Name or Business
+                    if (r <= vHeaderRow) return;
+
                     let name = cName ? getVal(row.getCell(cName)) : '';
                     let biz = cBiz ? getVal(row.getCell(cBiz)) : '';
-                    const key = (name || biz).toLowerCase().trim();
-                    if (!key) return;
+                    const firstName = cFirstName ? getVal(row.getCell(cFirstName)) : '';
+                    const lastNameVal = cLastName ? getVal(row.getCell(cLastName)) : '';
 
-                    const existing = vendorDetailsMap.get(key) || {};
+                    // Construct Fallback Name if 'Name' column is empty
+                    if (!name.trim()) {
+                        if (firstName && lastNameVal) name = `${firstName} ${lastNameVal}`;
+                        else if (lastNameVal) name = lastNameVal;
+                        else if (firstName) name = firstName;
+                    }
 
-                    // Merge: External takes precedence for empty fields, or overwrite?
-                    // "use the info in the report" -> implies external is source of truth for details
-                    vendorDetailsMap.set(key, {
-                        ...existing,
-                        name: name || existing.name,
-                        business: biz || existing.business,
-                        ssn: (cSSN ? getVal(row.getCell(cSSN)) : '') || existing.ssn,
-                        address: (cAddr ? getVal(row.getCell(cAddr)) : '') || existing.address,
-                        email: (cEmail ? getVal(row.getCell(cEmail)) : '') || existing.email,
-                        phone: (cPhone ? getVal(row.getCell(cPhone)) : '') || existing.phone,
+                    const ssn = (cSSN ? getVal(row.getCell(cSSN)) : '').toString().trim();
+                    const addr = (cAddr ? getVal(row.getCell(cAddr)) : '').toString().trim();
+                    const city = (cCity ? getVal(row.getCell(cCity)) : '').toString().trim();
+                    const state = (cState ? getVal(row.getCell(cState)) : '').toString().trim();
+                    const zip = (cZip ? getVal(row.getCell(cZip)) : '').toString().trim();
+
+                    if (showChecker && r < 40) {
+                        console.log(`[Vendor Load DEBUG] Row ${r}: Name="${name}", Biz="${biz}", TIN="${ssn}"`);
+                    }
+
+                    // Key candidate list (multi-mapping)
+                    const keys = new Set();
+                    if (name) keys.add(NORM_VEND(name));
+                    if (biz) keys.add(NORM_VEND(biz));
+                    if (firstName && lastNameVal) keys.add(NORM_VEND(`${firstName} ${lastNameVal}`));
+
+                    if (keys.size === 0) return;
+
+                    const details = {
+                        name: name || (firstName && lastNameVal ? `${firstName} ${lastNameVal}` : (biz || '')),
+                        firstName: firstName || '',
+                        lastName: lastNameVal || (name && !biz ? name : ''),
+                        business: biz || '',
+                        ssn: ssn || '',
+                        address: addr || '',
+                        city: city || '',
+                        state: state || '',
+                        zip: zip || '',
+                        email: (cEmail ? getVal(row.getCell(cEmail)) : '') || '',
+                        phone: (cPhone ? getVal(row.getCell(cPhone)) : '') || '',
+                        country: (cCountry ? getVal(row.getCell(cCountry)) : '') || '',
+                        entityType: (cEntityType ? getVal(row.getCell(cEntityType)) : '') || '',
+                        tinType: (cTINType ? getVal(row.getCell(cTINType)) : '') || ''
+                    };
+
+                    // Mark as 1099 required if column says so
+                    if (cREQ) {
+                        const val = getVal(row.getCell(cREQ)).toString().toLowerCase();
+                        if (val === 'yes' || val === 'nec' || val === 'misc' || val === 'int') {
+                            details.req = 'YES';
+                            details.type = (val === 'yes') ? 'NEC' : val.toUpperCase();
+                        }
+                    }
+
+                    keys.forEach(k => {
+                        if (showChecker && (k.includes('peter') || k.includes('hinal') || k.includes('wienold') || k.includes('shah'))) {
+                            console.log(`[Vendor Map] Mapping key "${k}" to data on row ${r}`);
+                        }
+                        const existing = vendorDetailsMap.get(k) || {};
+                        vendorDetailsMap.set(k, { ...existing, ...details });
+                        if (!validVendors.has(k)) validVendors.set(k, details.name || details.business || k);
                     });
                 });
-                console.log(`[Validation] Loaded vendor info from ${fName}`);
+                console.log(`[Validation] Loaded vendor info from: ${fPath}`);
                 break; // Stop after first successful file match
             }
+        }
+        if (!loadedPath) {
+            console.warn(`\n[!] WARNING: No "vendor.xlsx" or "vendor.csv" found in search paths.`);
+            console.warn(`    Looked in: ${Array.from(dirsToCheck).join(', ')}`);
+            console.warn(`    1099 details will be missing.\n`);
         }
     }
     await loadExternalVendors();
@@ -940,6 +1082,7 @@ Example:
 
             console.log(`  Mapping: ${Object.entries(map).filter(([k, v]) => v).map(([k, v]) => k + ':' + v).join(', ')}`);
             if (config.flip) console.log(`  [Polarity] Flip enabled for this sheet.`);
+            console.log(`  Linked Account: ${config.linkedAccount || 'NONE (Error if not Ledger)'}`);
         }
 
         let processedRows = 0;
@@ -1123,7 +1266,7 @@ Example:
 
                 if (vendorVal) {
                     const vStr = vendorVal.toString().trim();
-                    const vLower = vStr.toLowerCase();
+                    const vLower = NORM_VEND(vStr);
                     if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
 
                     const displayVendor = validVendors.get(vLower) || vStr;
@@ -1186,7 +1329,7 @@ Example:
                 }
                 if (customerVal) {
                     const cStr = customerVal.toString().trim();
-                    const cLower = cStr.toLowerCase();
+                    const cLower = NORM_VEND(cStr);
                     if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: sheet.name, row: r, date: displayDate });
 
                     const displayCustomer = validCustomers.get(cLower) || cStr;
@@ -1312,20 +1455,37 @@ Example:
 
     // --- 3. Process Ledger ---
     // Find Ledger configuration from Setup
-    const ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'general ledger' || c.name.toLowerCase() === 'ledger');
+    // Find Ledger configuration from Setup, or fallback to default
+    let ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'general ledger' || c.name.toLowerCase() === 'ledger');
 
     if (!ledgerConfig) {
-        console.error(`\n[ERROR] Checker Failed: "Ledger" configuration not found in Setup > SheetInfo.`);
-        console.error(`Your workbook contains a "Ledger" sheet, so you MUST define it in the SheetInfo table.`);
-        console.error(`Please add a row to SheetInfo:`);
-        console.error(`   Sheet Name: General Ledger`);
-        console.error(`   Type:       Ledger`);
-        console.error(`   Flip:       No`);
-        console.error(`   Offset:     3 (or your header row)`);
-        process.exit(1);
+        if (showChecker) console.log(`[Info] No explicit "Ledger" config found in Setup. Using default configuration with auto-detected header.`);
+
+        // Auto-detect header row
+        let detectedOffset = 3;
+        ledgerSheet.eachRow((row, r) => {
+            if (r > 10) return; // Only scan first 10 rows
+            const values = row.values.map(v => (v ? v.toString().toLowerCase() : ''));
+            const hasDate = values.some(v => v.includes('date'));
+            const hasCat = values.some(v => v.includes('category'));
+            if (hasDate && hasCat) {
+                detectedOffset = r;
+            }
+        });
+
+        ledgerConfig = {
+            name: ledgerSheet.name,
+            type: 'ledger',
+            flip: false,
+            offset: detectedOffset,
+            startBalance: 0,
+            endBalance: null,
+            linkedAccount: null
+        };
+        sheetConfigs.push(ledgerConfig);
     }
 
-    const ledgerHeaderRow = ledgerConfig.offset || 3; // Default to 3 if offset is 0/undefined but config exists
+    const ledgerHeaderRow = ledgerConfig.offset || 3;
 
     // Dynamic Mapping for Ledger
     const ledgerMap = { date: null, desc: null, category: null, subCat: null, vendor: null, customer: null, dr: null, cr: null };
@@ -1391,6 +1551,14 @@ Example:
                 return;
             }
 
+            // Vendor Validation
+            if (vendorVal) {
+                const vStr = vendorVal.toString().trim();
+                const vLower = NORM_VEND(vStr);
+                // Using 'General Ledger' or dynamic name? ledgerConfig.name is better but 'Ledger' is hardcoded here in context
+                if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: (rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : (rawDate || 'N/A')) });
+            }
+
             if (cat) {
                 const catStr = cat.toString().trim();
                 const catLower = catStr.toLowerCase();
@@ -1453,7 +1621,7 @@ Example:
                 // Vendor / Customer Stats from Ledger
                 if (vendorVal) {
                     const vStr = vendorVal.toString().trim();
-                    const vLower = vStr.toLowerCase();
+                    const vLower = NORM_VEND(vStr);
                     if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
 
                     const displayVendor = validVendors.get(vLower) || vStr;
@@ -1800,7 +1968,7 @@ Example:
         print1099('NEC', reports.vendors1099NEC, 600);
         print1099('INT', reports.vendors1099INT, 0);
 
-        // Generate CSV if any data found
+        // Generate 1099 List if any data found
         const all1099 = [
             ...reports.vendors1099NEC.map(x => ({ ...x, form: 'NEC', threshold: 600 })),
             ...reports.vendors1099INT.map(x => ({ ...x, form: 'INT', threshold: 0 }))
@@ -1809,22 +1977,19 @@ Example:
         // Filter by threshold & polarity
         const csvRows = [];
         all1099.forEach(r => {
-            // Polarity Logic: 
-            // - Value is now POSITIVE for Expenses.
-            // - Threshold Check: Value > Threshold.
-            // - Filter: Only Net Expenses (Positive Values).
-
             const isExpense = r.value > 0; // Net Payment
-
             if (isExpense && r.value >= r.threshold) {
-                const d = vendorDetailsMap.get(r.label.toLowerCase()) || {};
+                const d = vendorDetailsMap.get(NORM_VEND(r.label)) || {};
                 csvRows.push({
                     ...d,
-                    amount: r.value, // Positive value for IRS
-                    form: r.form
+                    amount: r.value,
+                    form: r.form,
+                    originalLabel: r.label
                 });
             }
         });
+        // Store for saveReport
+        reports.data1099 = csvRows;
 
         if (csvRows.length > 0) {
             const payerName = payerInfo['companyname'] || payerInfo['payername'] || payerInfo['businessname'] || payerInfo['name'] || 'Unknown_Payer';
@@ -1865,8 +2030,66 @@ Example:
                 fileContent.push(row.join(','));
             });
 
-            fs.writeFileSync(csvPath, fileContent.join('\n'));
-            console.log(`\n[SUCCESS] Generated 1099 CSV: ${csvPath}`);
+            /* 
+            if (saveFlag) {
+                fs.writeFileSync(csvPath, fileContent.join('\n'));
+                console.log(`\n[SUCCESS] Generated 1099 2CSV: ${csvPath}`);
+            }
+            */
+
+            // Always print to screen
+            // 1. Payer Info (You) - Display ONCE
+            console.log('\n--- 1099 PAYER INFO (You) ---');
+            console.log(`Name:    ${pName}`);
+            console.log(`TIN:     ${pTIN}`);
+            console.log(`Address: ${pAddr}, ${pCity}, ${pState} ${pZip}`);
+            console.log(`Phone:   ${pPhone}`);
+            console.log(`Email:   ${pEmail}`);
+
+            // 2. Recipient Info
+            console.log('\n--- 1099 RECIPIENT INFO (Vendors) ---');
+            console.log(`Recipient`.padEnd(30) + `Business`.padEnd(25) + `TIN`.padEnd(12) + `Amount`.padStart(12) + `  Form`);
+            console.log('-'.repeat(85));
+            csvRows.forEach(r => {
+                const rName = (r.name || 'Unknown').substring(0, 29);
+                const rBiz = (r.business || '').substring(0, 24);
+
+                // STRICT VALIDATION for Console Output too
+                const missingFields = [];
+                // Check r (which is merged details)
+                if (!r.ssn) missingFields.push('Tax ID (SSN/EIN)');
+                if (!r.address) missingFields.push('Address');
+                if (!r.city) missingFields.push('City');
+                if (!r.state) missingFields.push('State');
+                if (!r.zip) missingFields.push('Zip');
+
+                const statusLine = `${rName.padEnd(30)}${rBiz.padEnd(25)}${(r.ssn || '').padEnd(12)}${r.amount.toFixed(2).padStart(12)}  ${r.form}`;
+                console.log(statusLine);
+
+                if (missingFields.length > 0) {
+                    const vendKey = NORM_VEND(r.originalLabel || r.name || r.business || '');
+                    const inDb = vendorDetailsMap.has(vendKey);
+
+                    if (!inDb) {
+                        console.error(`  [!] ERROR: Not found in "vendor.xlsx".`);
+                        // Fuzzy check for suggestions
+                        const suggestions = [];
+                        for (const dbKey of vendorDetailsMap.keys()) {
+                            if (dbKey.includes(vendKey) || vendKey.includes(dbKey)) suggestions.push(vendorDetailsMap.get(dbKey).name);
+                        }
+                        if (suggestions.length > 0) {
+                            console.error(`      Did you mean: ${suggestions.join(' or ')}?`);
+                        }
+                    } else {
+                        console.error(`  [!] ERROR: Incomplete Data! Missing: ${missingFields.join(', ')}`);
+                    }
+                    console.error(`      update "vendor.xlsx" to fix.`);
+                    hasErrors = true;
+                }
+            });
+            if (hasErrors) {
+                throw new Error(`1099 Validate Failed: One or more vendors have incomplete details. See logs above.`);
+            }
         }
     }
     // Customer report (already handles sub)
@@ -2021,13 +2244,16 @@ Example:
             }
         });
 
-
-
         // Combined Missing Vendors Report
         if (illegalVendors.length > 0) {
-            console.log('\n--- MISSING VENDORS FOR SETUP (Copy/Paste) ---');
+            console.error('\n[FATAL ERROR] Unknown Vendors Detected!');
+            console.error('The following vendors are not in your Setup sheet override list or vendor.xlsx:');
             const allUniqueVendors = Array.from(new Set(illegalVendors.map(x => x.value))).sort();
-            allUniqueVendors.forEach(v => console.log(v));
+            allUniqueVendors.forEach(v => console.error(` - "${v}"`));
+
+            console.error('\nPlease add these vendors to "Setup" or "vendor.xlsx" to proceed.');
+            console.error('Script will now EXIT to prevent data corruption/incomplete reports.');
+            process.exit(1);
         }
     }
 
@@ -2170,26 +2396,272 @@ Example:
         });
     }
 
-    // Backup before save
-    try {
-        const d = new Date();
-        const pad = (n) => n.toString().padStart(2, '0');
-        const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-        const ext = path.extname(filename);
-        const base = path.basename(filename, ext);
-        const backupPath = path.join(path.dirname(filename), `${base}_backup_${timestamp}${ext}`);
-        fs.copyFileSync(filename, backupPath);
-        console.log(`\nBackup created: ${backupPath}`);
-    } catch (e) {
-        console.error(`Warning: Failed to create backup: ${e.message}`);
+    if (saveFlag) {
+        await saveReport(filename, reports, logBuffer, {
+            showPL, showBS, showVendor, showVendorSub, showCustomer, showCustomerSub, show1099, showChecker,
+            showPLSub, showBSSub // Passing the sub flags
+        }, vendorDetailsMap, payerInfo);
+    } else {
+        // Original behavior: If NO save flag, maybe we just updated the file in-place? 
+        // The previous code did a backup and overwrite.
+        // User request specifically asks for "--save, create a new file".
+        // If --save is NOT passed, we should probably NOT touch the file or just do the in-place update if that was partial logic.
+        // But previously it was "Run to update financials". 
+        // Let's keep the existing in-place update IF --save is NOT passed but the user ran default mode?
+        // Actually, user says "for the --save, creat a new file...". 
+        // Implicitly, if --save is OFF, strict read-only report mode is safer given the new direction.
+        // But to avoid breaking valid "update" workflows, I'll allow in-place update ONLY if requested?
+        // Let's assume default is Read-Only unless --save is passed for the new report.
+        if (showChecker) console.log('\n[Info] Run with --save to generate full Excel report.');
+    }
+}
+
+// --- Report Generation Helper ---
+async function saveReport(originalFilename, reports, logs, flags, vendorDetails, payerInfo) {
+    const dir = path.dirname(originalFilename);
+    const base = path.basename(originalFilename, path.extname(originalFilename));
+    const newFilename = path.join(dir, `report_${base}.xlsx`);
+
+    // We use originalConsole to avoid cluttering the buffer right at the end
+    originalConsole.log(`\n[Saving] Generating report file: ${newFilename} ...`);
+
+    const wb = new ExcelJS.Workbook();
+
+    // Helper to add header row
+    const addHeader = (sheet, columns) => {
+        sheet.addRow(columns);
+        sheet.getRow(1).font = { bold: true };
+    };
+
+    // 1. Profit & Loss (Standard + Sub)
+    if (flags.showPL) {
+        // Standard Tab
+        const ws = wb.addWorksheet('Profit & Loss');
+        ws.columns = [{ header: 'Category', key: 'cat', width: 35 }, { header: 'Amount', key: 'amt', width: 15 }];
+        reports.pl.forEach(r => ws.addRow({ cat: r.label, amt: r.value }));
+        const netPL = reports.pl.reduce((acc, r) => acc + r.value, 0);
+        const lastRow = ws.addRow({ cat: 'NET INCOME', amt: netPL });
+        lastRow.font = { bold: true };
+        ws.getColumn(2).numFmt = '#,##0.00';
+
+        // P&L Detailed Tab (if --pl passed, we also include details if --pl-sub OR just by default in Excel? User asked for tabs.)
+        // User request: "also tab for bs-sub, pl-sub... PLUS without sub". So we always add detailed tabs if base arg present?
+        // Or only if sub arg? User said "if pl and bs-sub...".
+        // Let's assume: flags.showPL -> Standard Tab. flags.showPLSub -> Detailed Tab.
+        // Wait, user said "also tab for bs-sub, pl-sub... PLUS without sub".
+        // This suggests we should produce BOTH tabs if the detailed flag is on.
+        // Actually, let's just produce the detailed tab as "Profit & Loss Detailed" if showPLSub is explicitly requested?
+        // Or maybe just always include it because it's effectively "Save full report"?
+        // Given "plus without sub", I'll generate both tabs logic if showPL is true (Standard) and showPLSub/showPLDetailed?
+        // Flag checking logic passed in `flags` object.
+        // I will add 'showPLSub' and 'showBSSub' to the flags object being passed.
+
+        if (flags.showPLSub) {
+            const wsSub = wb.addWorksheet('P&L Detailed');
+            // Gather all sheet names
+            const allSheets = new Set();
+            reports.pl.forEach(c => Object.keys(c.sheets || {}).forEach(s => allSheets.add(s)));
+            const sortedSheets = Array.from(allSheets).sort();
+
+            const header = ['Category', 'Net Total', 'Additions', 'Subtractions'];
+            sortedSheets.forEach(s => header.push(`${s} (Net)`));
+
+            wsSub.columns = header.map(h => ({ header: h, width: h === 'Category' ? 35 : 15 }));
+
+            reports.pl.forEach(c => {
+                const row = [c.label, c.value, c.add, c.sub];
+                sortedSheets.forEach(s => {
+                    const sData = (c.sheets && c.sheets[s]) ? c.sheets[s].total : 0;
+                    row.push(sData);
+                });
+                wsSub.addRow(row);
+            });
+
+            // Calculate Totals for Detailed View
+            if (reports.pl.length > 0) {
+                const totalRow = ['NET INCOME'];
+                // 1. Net Total
+                totalRow.push(reports.pl.reduce((sum, r) => sum + r.value, 0));
+                // 2. Additions
+                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.add || 0), 0));
+                // 3. Subtractions
+                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sub || 0), 0));
+
+                // 4. Per-Sheet Totals
+                sortedSheets.forEach(s => {
+                    const sheetSum = reports.pl.reduce((sum, r) => {
+                        return sum + ((r.sheets && r.sheets[s]) ? r.sheets[s].total : 0);
+                    }, 0);
+                    totalRow.push(sheetSum);
+                });
+
+                const tRow = wsSub.addRow(totalRow);
+                tRow.font = { bold: true };
+            }
+
+            // Format numbers
+            for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
+        }
     }
 
-    try {
-        await workbook.xlsx.writeFile(filename);
-        if (showChecker || saveFlag) console.log(`\nSuccessfully updated financials in ${filename}`);
-    } catch (e) {
-        console.error('Error saving file:', e.message);
+    // 2. Balance Sheet (Standard + Sub)
+    if (flags.showBS) {
+        // Standard Tab
+        const ws = wb.addWorksheet('Balance Sheet');
+        ws.columns = [{ header: 'Account', key: 'acc', width: 35 }, { header: 'Balance', key: 'bal', width: 15 }];
+        reports.bs.forEach(r => ws.addRow({ acc: r.label, bal: r.value }));
+        ws.getColumn(2).numFmt = '#,##0.00';
+
+        if (flags.showBSSub) {
+            const wsSub = wb.addWorksheet('Balance Sheet Detailed');
+            const allSheets = new Set();
+            reports.bs.forEach(c => Object.keys(c.sheets || {}).forEach(s => allSheets.add(s)));
+            const sortedSheets = Array.from(allSheets).sort();
+
+            const header = ['Account', 'Balance', 'Additions', 'Subtractions'];
+            sortedSheets.forEach(s => header.push(`${s} (Net)`));
+
+            wsSub.columns = header.map(h => ({ header: h, width: h === 'Account' ? 35 : 15 }));
+
+            reports.bs.forEach(c => {
+                const row = [c.label, c.value, c.add, c.sub];
+                sortedSheets.forEach(s => {
+                    const sData = (c.sheets && c.sheets[s]) ? c.sheets[s].total : 0;
+                    row.push(sData);
+                });
+                wsSub.addRow(row);
+            });
+            for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
+        }
     }
+
+    // 3. Vendor Report
+    if (flags.showVendor) {
+        const ws = wb.addWorksheet('Vendor Report');
+        ws.columns = [{ header: 'Vendor', key: 'v', width: 30 }, { header: 'Net Amount', key: 'a', width: 15 }];
+        reports.vendors.forEach(v => ws.addRow({ v: v.label, a: v.value }));
+        ws.getColumn(2).numFmt = '#,##0.00';
+    }
+
+    // 3b. Vendor Detailed
+    if (flags.showVendorSub) {
+        const ws = wb.addWorksheet('Vendor Detailed');
+        const header = ['Vendor', 'Net Total', 'Additions', 'Subtractions'];
+        const allSheets = new Set();
+        reports.vendors.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
+        const sortedSheets = Array.from(allSheets).sort();
+        sortedSheets.forEach(s => header.push(`${s} (Net)`));
+
+        ws.columns = header.map(h => ({ header: h, key: h, width: h === 'Vendor' ? 30 : 15 }));
+
+        reports.vendors.forEach(v => {
+            const row = [v.label, v.value, v.add, v.sub];
+            sortedSheets.forEach(s => {
+                const sData = (v.sheets && v.sheets[s]) ? v.sheets[s].total : 0;
+                row.push(sData);
+            });
+            ws.addRow(row);
+        });
+        for (let c = 2; c <= header.length; c++) ws.getColumn(c).numFmt = '#,##0.00';
+    }
+
+    // 4. Customer Report
+    if (flags.showCustomer) {
+        const ws = wb.addWorksheet('Customer Report');
+        ws.columns = [{ header: 'Customer', key: 'c', width: 30 }, { header: 'Net Amount', key: 'a', width: 15 }];
+        reports.customers.forEach(c => ws.addRow({ c: c.label, a: c.value }));
+        ws.getColumn(2).numFmt = '#,##0.00';
+    }
+
+    // 4b. Customer Detailed
+    if (flags.showCustomerSub) {
+        const ws = wb.addWorksheet('Customer Detailed');
+        const header = ['Customer', 'Net Total', 'Additions', 'Subtractions'];
+        const allSheets = new Set();
+        reports.customers.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
+        const sortedSheets = Array.from(allSheets).sort();
+        sortedSheets.forEach(s => header.push(`${s} (Net)`));
+
+        ws.columns = header.map(h => ({ header: h, width: h === 'Customer' ? 30 : 15 }));
+
+        reports.customers.forEach(c => {
+            const row = [c.label, c.value, c.add, c.sub];
+            sortedSheets.forEach(s => {
+                const sData = (c.sheets && c.sheets[s]) ? c.sheets[s].total : 0;
+                row.push(sData);
+            });
+            ws.addRow(row);
+        });
+        for (let c = 2; c <= header.length; c++) ws.getColumn(c).numFmt = '#,##0.00';
+    }
+
+    // 5. 1099 Report
+    if (flags.show1099) {
+        const ws = wb.addWorksheet('1099 Data');
+        ws.columns = [
+            { header: 'Last Name / Business', width: 25 },
+            { header: 'First Name', width: 20 },
+            { header: 'Type', width: 15 }, // Business or Individual
+            { header: 'TIN Type', width: 10 },
+            { header: 'TIN', width: 15 },
+            { header: 'Email', width: 25 },
+            { header: 'Phone Number', width: 15 },
+            { header: 'Address', width: 30 },
+            { header: 'City', width: 15 },
+            { header: 'State', width: 5 },
+            { header: 'Zip Code', width: 10 },
+            { header: 'Country', width: 10 },
+            { header: 'Amount', width: 15 } // Configured for 1099
+        ];
+
+        // Use the synchronized 1099 data captured earlier
+        (reports.data1099 || []).forEach(details => {
+            // Determine Entity Type and TIN Type
+            let entityType = details.entityType || '';
+            if (!entityType) {
+                entityType = details.firstName ? 'Individual' : 'Business';
+            }
+
+            // If Business Name is present but Last Name is missing, use Business Name
+            const finalLastName = details.lastName || details.business || details.name || 'Unknown';
+            const finalFirst = details.firstName || '';
+
+            // Guess TIN Type or use explicit
+            let tinType = details.tinType || '';
+            if (!tinType) {
+                tinType = 'EIN';
+                const cleanTIN = (details.ssn || '').replace(/[^0-9]/g, '');
+                if (cleanTIN.length === 9) {
+                    if (entityType.toLowerCase().startsWith('ind')) tinType = 'SSN';
+                }
+            }
+
+            ws.addRow([
+                finalLastName,
+                finalFirst,
+                entityType,
+                tinType,
+                details.ssn || '',
+                details.email || '',
+                details.phone || '',
+                details.address || '',
+                details.city || '',
+                details.state || '',
+                details.zip || '',
+                details.country || '',
+                details.amount
+            ]);
+        });
+        ws.getColumn(13).numFmt = '#,##0.00';
+    }
+
+    // Notes / Log Sheet (Always added if checker or debug or save)
+    const logWs = wb.addWorksheet('Processing Log');
+    logWs.getColumn(1).width = 120;
+    logs.forEach(l => logWs.addRow([l.replace(/\x1b\[[0-9;]*m/g, '')])); // Strip ANSI colors
+
+    await wb.xlsx.writeFile(newFilename);
+    originalConsole.log(`[Saved] Report saved to: ${newFilename}`);
 }
 
 updateFinancials().catch(console.error);

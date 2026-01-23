@@ -4,6 +4,7 @@
     "description": "Tools for managing LLC accounting using Excel and Node.js",
     "main": "generate_excel.js",
     "dependencies": {
-        "exceljs": "^4.4.0"
+        "exceljs": "^4.4.0",
+        "glob": "^13.0.0"
     }
 }
