@@ -1,0 +1,2 @@
+Payer Name,Payer TIN,Payer Address,Payer City,Payer State,Payer Zip,Payer Country,Payer Email,Payer Phone,Recipient Name,Recipient Business Name,Recipient TIN,Recipient Address,Recipient Email,Recipient Phone,Amount,Form 1099 Type
+"Test Company","00-0000000","","","","","","","","Lawyer 1099","Law Firm LLC","12-3456789","","","",2000.00,NEC
