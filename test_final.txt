@@ -1,0 +1,19 @@
+﻿LLC Accounting Tool v2.0.0
+[Sheet Stats] "Bank Transactions": Processed 0 rows. Total Change: 0.00
+[Linkage Logic] Applied Bank Transactions Total (0.00) to Asset "Checking Account". Balance: 0.00 -> 0.00
+[Sheet Stats] "Credit Card Transactions": Processed 0 rows. Total Change: 0.00
+[Linkage Logic] Applied Credit Card Transactions Total (0.00) to Liability "Credit Card". Balance: 0.00 -> 0.00
+[Sheet Stats] "undefined": Processed 2 rows. Total Change: -1050.00
+[Linkage Logic] Sheet "Ledger" (Type: Ledger) has NO LINKED ACCOUNT. Total (-1050.00) NOT applied to any Balance Sheet asset.
+
+--- PROFIT & LOSS ---
+Office          :          -50.00
+Rent            :            0.00
+Sales           :            0.00
+Services        :            0.00
+Travel          :            0.00
+
+=== NET INCOME: -50.00 ===
+
+
+(Run with --save to update the Excel file)

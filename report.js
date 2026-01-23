@@ -8,6 +8,7 @@ const util = require('util');
 const originalConsole = { log: console.log, warn: console.warn, error: console.error };
 
 // --- Logger Buffer for "Notes" Tab ---
+global.globalWarningCount = 0;
 const logBuffer = [];
 const consoleLogger = {
     log: (...args) => {
@@ -19,11 +20,13 @@ const consoleLogger = {
         const msg = util.format(...args);
         originalConsole.error(msg);
         logBuffer.push('[ERROR] ' + msg);
+        global.globalWarningCount = (global.globalWarningCount || 0) + 1;
     },
     warn: (...args) => {
         const msg = util.format(...args);
         originalConsole.warn(msg);
         logBuffer.push('[WARN] ' + msg);
+        global.globalWarningCount = (global.globalWarningCount || 0) + 1;
     }
 };
 
@@ -71,7 +74,15 @@ async function updateFinancials() {
     const showBSSub = args.includes('--bs-sub');
     const showChecker = args.includes('--checker');
     const showDebug = args.includes('--debug');
-    const show1099 = args.includes('--1099')
+    const show1099All = args.includes('--1099');
+    const show1099NEC = args.includes('--1099=NEC') || args.includes('--1099-nec');
+    const show1099INT = args.includes('--1099=INT');
+    const show1099 = show1099All || show1099NEC || show1099INT;
+    const ignoreVendors = args.includes('--ignore-vendors');
+
+    // Parse --vendor-file <path>
+    const vendorFileIndex = args.indexOf('--vendor-file');
+    const customVendorFile = vendorFileIndex !== -1 && args[vendorFileIndex + 1] ? args[vendorFileIndex + 1] : null;
 
     // Parse --details <Category>
     const detailsIndex = args.indexOf('--details');
@@ -105,7 +116,11 @@ Flags:
   --vendor-sub    (Optional) Print detailed Vendor Spending with sheet-level breakdowns.
   --customer      (Optional) Print income statistics by Customer.
   --customer-sub  (Optional) Print detailed Customer Income with sheet-level breakdowns.
-  --1099          (Optional) Generate 1099-NEC and 1099-INT reports for enabled vendors.
+  --1099          (Optional) Generate both 1099-NEC and 1099-INT reports.
+  --1099=NEC      (Optional) Generate only 1099-NEC reports.
+  --1099=INT      (Optional) Generate only 1099-INT reports.
+  --ignore-vendors (Optional) Skip loading external "vendor.xlsx" or "vendor.csv" files.
+  --vendor-file [path] (Optional) Specify a custom path to a "vendor.xlsx" or "vendor.csv" file.
   --details "Cat" (Optional) List all transactions for a specific Category (e.g., --details "Office Supplies").
 
 Example:
@@ -115,7 +130,7 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec'
+        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file'
     ];
 
     // Check for unknown arguments
@@ -142,16 +157,15 @@ Example:
         }
     }
 
+    // Override console for capturing output EARLY to capture setup warnings
+    console.log = consoleLogger.log;
+    console.warn = consoleLogger.warn;
+    console.error = consoleLogger.error;
+
     if (!fs.existsSync(filename)) {
         console.error(`Error: File '${filename}' not found.`);
         return;
     }
-
-    // Override console for capturing output if --save or checker is involved 
-    // (Actually always capture so we have logs available for save)
-    console.log = consoleLogger.log;
-    console.warn = consoleLogger.warn;
-    console.error = consoleLogger.error;
 
     const workbook = new ExcelJS.Workbook();
     try {
@@ -180,17 +194,6 @@ Example:
         if (!ledgerSheet) console.error(' - "General Ledger" (or "Ledger") sheet is missing.');
         return;
     }
-
-    // Override console for capturing output
-    console.log = consoleLogger.log;
-    console.warn = consoleLogger.warn;
-    console.error = consoleLogger.error;
-
-    // Override console for capturing output if --save or checker is involved 
-    // (Actually always capture so we have logs available for save)
-    console.log = consoleLogger.log;
-    console.warn = consoleLogger.warn;
-    console.error = consoleLogger.error;
 
     // --- State ---
     const validCategories = new Set(); // Stores lowercase for validation
@@ -830,16 +833,18 @@ Example:
         const dirsToCheck = new Set([cwd, inputDir, targetDir]); // Use Set to deduplicate
         const checkPaths = [];
 
-        dirsToCheck.forEach(dir => {
-            checkPaths.push(path.join(dir, 'vendor.xlsx'));
-            checkPaths.push(path.join(dir, 'vendor.csv'));
-        });
+        if (customVendorFile) {
+            checkPaths.push(customVendorFile);
+        } else {
+            dirsToCheck.forEach(dir => {
+                checkPaths.push(path.join(dir, 'vendor.xlsx'));
+                checkPaths.push(path.join(dir, 'vendor.csv'));
+            });
+        }
 
         let loadedPath = null;
         for (const fPath of checkPaths) {
-            if (showChecker) console.log(`[Validation] Checking for Vendor File: ${fPath}`);
             if (fs.existsSync(fPath)) {
-                console.log(`[Validation] Found External Vendor File: ${fPath}`);
                 loadedPath = fPath;
 
                 const vWb = new ExcelJS.Workbook();
@@ -874,12 +879,7 @@ Example:
                 const cState = getVCol('state') || getVCol('province');
                 const cZip = getVCol('zipcode') || getVCol('zip') || getVCol('postalcode');
 
-                if (showChecker) {
-                    console.log(`[Vendor Load] "${path.basename(fPath)}" Header Row: ${vHeaderRow}`);
-                    console.log(`[Vendor Load] Detected Headers: ${Array.from(vHeaders.keys()).join(', ')}`);
-                    console.log(`[Vendor Load] Column Mapping: Name=${cName}, Biz=${cBiz}, TIN=${cSSN}, Addr=${cAddr}, City=${cCity}, State=${cState}, Zip=${cZip}`);
-                }
-                if (showChecker && cName) console.log(`[Vendor Load] Primary matching column: 'Name' (Index ${cName})`);
+                // Headers found
 
                 vSheet.eachRow((row, r) => {
                     if (r <= vHeaderRow) return;
@@ -902,9 +902,6 @@ Example:
                     const state = (cState ? getVal(row.getCell(cState)) : '').toString().trim();
                     const zip = (cZip ? getVal(row.getCell(cZip)) : '').toString().trim();
 
-                    if (showChecker && r < 40) {
-                        console.log(`[Vendor Load DEBUG] Row ${r}: Name="${name}", Biz="${biz}", TIN="${ssn}"`);
-                    }
 
                     // Key candidate list (multi-mapping)
                     const keys = new Set();
@@ -941,15 +938,11 @@ Example:
                     }
 
                     keys.forEach(k => {
-                        if (showChecker && (k.includes('peter') || k.includes('hinal') || k.includes('wienold') || k.includes('shah'))) {
-                            console.log(`[Vendor Map] Mapping key "${k}" to data on row ${r}`);
-                        }
                         const existing = vendorDetailsMap.get(k) || {};
                         vendorDetailsMap.set(k, { ...existing, ...details });
                         if (!validVendors.has(k)) validVendors.set(k, details.name || details.business || k);
                     });
                 });
-                console.log(`[Validation] Loaded vendor info from: ${fPath}`);
                 break; // Stop after first successful file match
             }
         }
@@ -959,7 +952,9 @@ Example:
             console.warn(`    1099 details will be missing.\n`);
         }
     }
-    await loadExternalVendors();
+    if (!ignoreVendors) {
+        await loadExternalVendors();
+    }
 
     // --- 2. Process Transaction Sheets ---
     // --- Constants for Column Headers ---
@@ -1431,10 +1426,12 @@ Example:
                 catStats[linkName].total -= sheetTotal;
             }
 
-            // Apply Starting Balance (if any)
+            let linkageMsg = `[Linkage Logic] Linked "${config.name}" to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
             if (config.startBalance && Math.abs(config.startBalance) > 0.001) {
                 catStats[linkName].total += config.startBalance;
-                console.log(`[Linkage Logic] Applied Starting Balance (${config.startBalance.toFixed(2)}) to "${linkName}".`);
+                linkageMsg = `[Linkage Logic] Applied Starting Balance (${config.startBalance.toFixed(2)}) and ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
+            } else {
+                linkageMsg = `[Linkage Logic] Applied ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
             }
 
             // Track sheet-level contribution to BS account
@@ -1446,7 +1443,7 @@ Example:
 
             if (isAsset) sStat.total += sheetTotal; else sStat.total -= sheetTotal;
 
-            console.log(`[Linkage Logic] Applied ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}". Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
+            console.log(`${linkageMsg} Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
         } else if (config.type !== 'ledger') {
             // Only warn if it's not a Ledger (Ledgers are manual)
             if (showDebug) console.log(`[Linkage Logic] Sheet "${config.name}" (Type: ${config.type}) has NO LINKED ACCOUNT. Total (${sheetTotal.toFixed(2)}) NOT applied to any Balance Sheet asset.`);
@@ -1965,14 +1962,16 @@ Example:
     };
 
     if (showAll || show1099) {
-        print1099('NEC', reports.vendors1099NEC, 600);
-        print1099('INT', reports.vendors1099INT, 0);
+        const activeNEC = showAll || show1099All || show1099NEC;
+        const activeINT = showAll || show1099All || show1099INT;
+
+        if (activeNEC) print1099('NEC', reports.vendors1099NEC, 600);
+        if (activeINT) print1099('INT', reports.vendors1099INT, 0);
 
         // Generate 1099 List if any data found
-        const all1099 = [
-            ...reports.vendors1099NEC.map(x => ({ ...x, form: 'NEC', threshold: 600 })),
-            ...reports.vendors1099INT.map(x => ({ ...x, form: 'INT', threshold: 0 }))
-        ];
+        const all1099 = [];
+        if (activeNEC) all1099.push(...reports.vendors1099NEC.map(x => ({ ...x, form: 'NEC', threshold: 600 })));
+        if (activeINT) all1099.push(...reports.vendors1099INT.map(x => ({ ...x, form: 'INT', threshold: 0 })));
 
         // Filter by threshold & polarity
         const csvRows = [];
@@ -2088,7 +2087,7 @@ Example:
                 }
             });
             if (hasErrors) {
-                throw new Error(`1099 Validate Failed: One or more vendors have incomplete details. See logs above.`);
+                throw new Error(`1099 Validation Failed: One or more vendors have incomplete details. Update "vendor.xlsx" and run again.`);
             }
         }
     }
@@ -2414,6 +2413,11 @@ Example:
         // Let's assume default is Read-Only unless --save is passed for the new report.
         if (showChecker) console.log('\n[Info] Run with --save to generate full Excel report.');
     }
+
+    if (global.globalWarningCount > 0) {
+        originalConsole.error(`\n[BATCH STOP] Process exited with ${global.globalWarningCount} warnings/errors.`);
+        process.exit(1);
+    }
 }
 
 // --- Report Generation Helper ---
@@ -2664,4 +2668,10 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     originalConsole.log(`[Saved] Report saved to: ${newFilename}`);
 }
 
-updateFinancials().catch(console.error);
+updateFinancials().catch(e => {
+    console.error(`\n[CRITICAL ERROR] ${e.message}`);
+    if (e.stack && process.argv.includes('--debug')) {
+        originalConsole.error(e.stack);
+    }
+    process.exit(1);
+});
