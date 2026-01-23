@@ -982,6 +982,8 @@ Example:
 
     for (const config of sheetConfigs) {
         let sheetTotal = 0;
+        let sheetAdds = 0;
+        let sheetSubs = 0;
         let sheet = workbook.getWorksheet(config.name);
         if (!sheet) {
             sheet = workbook.worksheets.find(s => s.name.trim().toLowerCase() === config.name.trim().toLowerCase());
@@ -1184,6 +1186,7 @@ Example:
                 if (config.flip) amount *= -1;
 
                 // Accumulate Sheet Total (Net Flow)
+                if (amount >= 0) sheetAdds += amount; else sheetSubs += amount;
                 sheetTotal += amount;
                 if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
 
@@ -1434,14 +1437,13 @@ Example:
                 linkageMsg = `[Linkage Logic] Applied ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
             }
 
-            // Track sheet-level contribution to BS account
             if (!catStats[linkName].sheets[config.name]) {
                 catStats[linkName].sheets[config.name] = { add: 0, sub: 0, total: 0 };
             }
             const sStat = catStats[linkName].sheets[config.name];
-            if (sheetTotal >= 0) sStat.add += sheetTotal; else sStat.sub += sheetTotal;
-
-            if (isAsset) sStat.total += sheetTotal; else sStat.total -= sheetTotal;
+            sStat.add += sheetAdds;
+            sStat.sub += sheetSubs;
+            sStat.total += (isAsset ? sheetTotal : -sheetTotal);
 
             console.log(`${linkageMsg} Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
         } else if (config.type !== 'ledger') {
@@ -1729,12 +1731,21 @@ Example:
         .map(conf => conf.displayName)
         .sort();
 
-    reports.pl = pnlNames.map(n => ({
-        label: n,
-        value: catStats[n] ? catStats[n].total : 0,
-        sheets: catStats[n] ? catStats[n].sheets : {},
-        subCats: catStats[n] ? catStats[n].subCats : {}
-    }));
+    reports.pl = pnlNames.map(n => {
+        const stats = catStats[n] || { total: 0, sheets: {} };
+        let add = 0, sub = 0;
+        Object.values(stats.sheets || {}).forEach(s => {
+            add += Math.abs(s.add || 0);
+            sub += Math.abs(s.sub || 0);
+        });
+        return {
+            label: n,
+            value: stats.total,
+            add, sub,
+            sheets: stats.sheets,
+            subCats: stats.subCats || {}
+        };
+    });
     const netIncome = reports.pl.reduce((a, b) => a + b.value, 0);
 
     // Balance Sheet Items
@@ -1744,14 +1755,18 @@ Example:
         .sort();
 
     const bsItems = bsNames.map(n => {
-        let val = catStats[n] ? catStats[n].total : 0;
-        // Since linkage now handles polarity (Asset += sheetTotal, Liability -= sheetTotal),
-        // catStats[n].total is the actual accounting balance.
+        const stats = catStats[n] || { total: 0, sheets: {} };
+        let add = 0, sub = 0;
+        Object.values(stats.sheets || {}).forEach(s => {
+            add += Math.abs(s.add || 0);
+            sub += Math.abs(s.sub || 0);
+        });
         return {
             label: n,
-            value: val,
-            sheets: catStats[n] ? catStats[n].sheets : {},
-            subCats: catStats[n] ? catStats[n].subCats : {}
+            value: stats.total,
+            add, sub,
+            sheets: stats.sheets,
+            subCats: stats.subCats || {}
         };
     });
 
@@ -1760,30 +1775,23 @@ Example:
     ];
 
     // Prepare Vendor / Customer Reports
+    reports.vendors1099NEC = Object.keys(vendor1099Stats.NEC).map(v => ({ label: v, value: vendor1099Stats.NEC[v] })).sort((a, b) => b.value - a.value);
+    reports.vendors1099INT = Object.keys(vendor1099Stats.INT).map(v => ({ label: v, value: vendor1099Stats.INT[v] })).sort((a, b) => b.value - a.value);
+
+    reports.customers = Object.keys(customerStats).map(c => ({
+        label: c,
+        add: customerStats[c].add || 0,
+        sub: customerStats[c].sub || 0,
+        value: customerStats[c].total || 0,
+        sheets: customerStats[c].sheets || {}
+    })).sort((a, b) => b.value - a.value);
+
     reports.vendors = Object.keys(vendorStats).map(v => ({
         label: v,
         add: vendorStats[v].add || 0,
         sub: vendorStats[v].sub || 0,
         value: vendorStats[v].total || 0,
         sheets: vendorStats[v].sheets || {}
-    })).sort((a, b) => b.value - a.value);
-    reports.vendors1099NEC = Object.keys(vendor1099Stats.NEC).map(v => ({ label: v, value: vendor1099Stats.NEC[v] })).sort((a, b) => b.value - a.value);
-    reports.vendors1099INT = Object.keys(vendor1099Stats.INT).map(v => ({ label: v, value: vendor1099Stats.INT[v] })).sort((a, b) => b.value - a.value);
-
-    reports.customers = Object.keys(customerStats).map(c => ({
-        label: c,
-        add: customerStats[c].add,
-        sub: customerStats[c].sub,
-        value: customerStats[c].total,
-        sheets: customerStats[c].sheets
-    })).sort((a, b) => b.value - a.value);
-    // Vendor report with sub breakdown
-    reports.vendors = Object.keys(vendorStats).map(v => ({
-        label: v,
-        add: vendorStats[v].add,
-        sub: vendorStats[v].sub,
-        value: vendorStats[v].total,
-        sheets: vendorStats[v].sheets
     })).sort((a, b) => b.value - a.value);
 
     // --- 5. Console Output ---
@@ -2397,8 +2405,17 @@ Example:
 
     if (saveFlag) {
         await saveReport(filename, reports, logBuffer, {
-            showPL, showBS, showVendor, showVendorSub, showCustomer, showCustomerSub, show1099, showChecker,
-            showPLSub, showBSSub // Passing the sub flags
+            showPL: showPL || showPLSub || showAll,
+            showPLSub: showPLSub || showAll,
+            showBS: showBS || showBSSub || showAll,
+            showBSSub: showBSSub || showAll,
+            showVendor: showVendor || showVendorSub || showAll,
+            showVendorSub: showVendorSub || showAll,
+            showCustomer: showCustomer || showCustomerSub || showAll,
+            showCustomerSub: showCustomerSub || showAll,
+            show1099: show1099 || showAll,
+            showChecker: showChecker || showAll,
+            showAll
         }, vendorDetailsMap, payerInfo);
     } else {
         // Original behavior: If NO save flag, maybe we just updated the file in-place? 
@@ -2461,49 +2478,42 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
         // I will add 'showPLSub' and 'showBSSub' to the flags object being passed.
 
         if (flags.showPLSub) {
-            const wsSub = wb.addWorksheet('P&L Detailed');
-            // Gather all sheet names
+            const wsSub = wb.addWorksheet('Profit & Loss Detailed');
             const allSheets = new Set();
             reports.pl.forEach(c => Object.keys(c.sheets || {}).forEach(s => allSheets.add(s)));
             const sortedSheets = Array.from(allSheets).sort();
 
-            const header = ['Category', 'Net Total', 'Additions', 'Subtractions'];
-            sortedSheets.forEach(s => header.push(`${s} (Net)`));
+            const header = ['Category', 'Grand Total'];
+            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            header.push('Total Additions');
+            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            header.push('Total Subtractions');
 
             wsSub.columns = header.map(h => ({ header: h, width: h === 'Category' ? 35 : 15 }));
 
             reports.pl.forEach(c => {
-                const row = [c.label, c.value, c.add, c.sub];
-                sortedSheets.forEach(s => {
-                    const sData = (c.sheets && c.sheets[s]) ? c.sheets[s].total : 0;
-                    row.push(sData);
-                });
+                const row = [c.label, c.value];
+                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
+                row.push(c.add || 0);
+                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
+                row.push(c.sub || 0);
                 wsSub.addRow(row);
             });
 
-            // Calculate Totals for Detailed View
             if (reports.pl.length > 0) {
                 const totalRow = ['NET INCOME'];
-                // 1. Net Total
                 totalRow.push(reports.pl.reduce((sum, r) => sum + r.value, 0));
-                // 2. Additions
-                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.add || 0), 0));
-                // 3. Subtractions
-                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sub || 0), 0));
-
-                // 4. Per-Sheet Totals
                 sortedSheets.forEach(s => {
-                    const sheetSum = reports.pl.reduce((sum, r) => {
-                        return sum + ((r.sheets && r.sheets[s]) ? r.sheets[s].total : 0);
-                    }, 0);
-                    totalRow.push(sheetSum);
+                    totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sheets && r.sheets[s] ? Math.abs(r.sheets[s].add || 0) : 0), 0));
                 });
-
+                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.add || 0), 0));
+                sortedSheets.forEach(s => {
+                    totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sheets && r.sheets[s] ? Math.abs(r.sheets[s].sub || 0) : 0), 0));
+                });
+                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sub || 0), 0));
                 const tRow = wsSub.addRow(totalRow);
                 tRow.font = { bold: true };
             }
-
-            // Format numbers
             for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
         }
     }
@@ -2522,81 +2532,92 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
             reports.bs.forEach(c => Object.keys(c.sheets || {}).forEach(s => allSheets.add(s)));
             const sortedSheets = Array.from(allSheets).sort();
 
-            const header = ['Account', 'Balance', 'Additions', 'Subtractions'];
-            sortedSheets.forEach(s => header.push(`${s} (Net)`));
+            const header = ['Account', 'Grand Total'];
+            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            header.push('Total Additions');
+            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            header.push('Total Subtractions');
 
             wsSub.columns = header.map(h => ({ header: h, width: h === 'Account' ? 35 : 15 }));
 
             reports.bs.forEach(c => {
-                const row = [c.label, c.value, c.add, c.sub];
-                sortedSheets.forEach(s => {
-                    const sData = (c.sheets && c.sheets[s]) ? c.sheets[s].total : 0;
-                    row.push(sData);
-                });
+                const row = [c.label, c.value];
+                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
+                row.push(c.add || 0);
+                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
+                row.push(c.sub || 0);
                 wsSub.addRow(row);
             });
             for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
         }
     }
 
-    // 3. Vendor Report
+    // 3. Vendor Report (Standard + Sub)
     if (flags.showVendor) {
-        const ws = wb.addWorksheet('Vendor Report');
+        // Standard Tab
+        const ws = wb.addWorksheet('Vendor Spending');
         ws.columns = [{ header: 'Vendor', key: 'v', width: 30 }, { header: 'Net Amount', key: 'a', width: 15 }];
         reports.vendors.forEach(v => ws.addRow({ v: v.label, a: v.value }));
         ws.getColumn(2).numFmt = '#,##0.00';
-    }
 
-    // 3b. Vendor Detailed
-    if (flags.showVendorSub) {
-        const ws = wb.addWorksheet('Vendor Detailed');
-        const header = ['Vendor', 'Net Total', 'Additions', 'Subtractions'];
-        const allSheets = new Set();
-        reports.vendors.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
-        const sortedSheets = Array.from(allSheets).sort();
-        sortedSheets.forEach(s => header.push(`${s} (Net)`));
+        if (flags.showVendorSub) {
+            const wsSub = wb.addWorksheet('Vendor Spending Detailed');
+            const allSheets = new Set();
+            reports.vendors.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
+            const sortedSheets = Array.from(allSheets).sort();
 
-        ws.columns = header.map(h => ({ header: h, key: h, width: h === 'Vendor' ? 30 : 15 }));
+            const header = ['Vendor', 'Grand Total'];
+            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            header.push('Total Additions');
+            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            header.push('Total Subtractions');
 
-        reports.vendors.forEach(v => {
-            const row = [v.label, v.value, v.add, v.sub];
-            sortedSheets.forEach(s => {
-                const sData = (v.sheets && v.sheets[s]) ? v.sheets[s].total : 0;
-                row.push(sData);
+            wsSub.columns = header.map(h => ({ header: h, width: h === 'Vendor' ? 30 : 15 }));
+
+            reports.vendors.forEach(v => {
+                const row = [v.label, v.value];
+                sortedSheets.forEach(s => row.push(v.sheets && v.sheets[s] ? Math.abs(v.sheets[s].add || 0) : 0));
+                row.push(v.add || 0);
+                sortedSheets.forEach(s => row.push(v.sheets && v.sheets[s] ? Math.abs(v.sheets[s].sub || 0) : 0));
+                row.push(v.sub || 0);
+                wsSub.addRow(row);
             });
-            ws.addRow(row);
-        });
-        for (let c = 2; c <= header.length; c++) ws.getColumn(c).numFmt = '#,##0.00';
+            for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
+        }
     }
 
-    // 4. Customer Report
+    // 4. Customer Report (Standard + Sub)
     if (flags.showCustomer) {
-        const ws = wb.addWorksheet('Customer Report');
+        // Standard Tab
+        const ws = wb.addWorksheet('Customer Income');
         ws.columns = [{ header: 'Customer', key: 'c', width: 30 }, { header: 'Net Amount', key: 'a', width: 15 }];
         reports.customers.forEach(c => ws.addRow({ c: c.label, a: c.value }));
         ws.getColumn(2).numFmt = '#,##0.00';
-    }
 
-    // 4b. Customer Detailed
-    if (flags.showCustomerSub) {
-        const ws = wb.addWorksheet('Customer Detailed');
-        const header = ['Customer', 'Net Total', 'Additions', 'Subtractions'];
-        const allSheets = new Set();
-        reports.customers.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
-        const sortedSheets = Array.from(allSheets).sort();
-        sortedSheets.forEach(s => header.push(`${s} (Net)`));
+        if (flags.showCustomerSub) {
+            const wsSub = wb.addWorksheet('Customer Income Detailed');
+            const allSheets = new Set();
+            reports.customers.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
+            const sortedSheets = Array.from(allSheets).sort();
 
-        ws.columns = header.map(h => ({ header: h, width: h === 'Customer' ? 30 : 15 }));
+            const header = ['Customer', 'Grand Total'];
+            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            header.push('Total Additions');
+            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            header.push('Total Subtractions');
 
-        reports.customers.forEach(c => {
-            const row = [c.label, c.value, c.add, c.sub];
-            sortedSheets.forEach(s => {
-                const sData = (c.sheets && c.sheets[s]) ? c.sheets[s].total : 0;
-                row.push(sData);
+            wsSub.columns = header.map(h => ({ header: h, width: h === 'Customer' ? 30 : 15 }));
+
+            reports.customers.forEach(c => {
+                const row = [c.label, c.value];
+                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
+                row.push(c.add || 0);
+                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
+                row.push(c.sub || 0);
+                wsSub.addRow(row);
             });
-            ws.addRow(row);
-        });
-        for (let c = 2; c <= header.length; c++) ws.getColumn(c).numFmt = '#,##0.00';
+            for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
+        }
     }
 
     // 5. 1099 Report
