@@ -188,7 +188,8 @@ async function runTests() {
     // 8. 1099 Generation within Excel Report
     const reportFile = 'tests/report_comprehensive_test_data.xlsx';
     try { fs.unlinkSync(reportFile); } catch (e) { }
-    run(`node report.js "${TEST_FILE}" --1099 --save`, true);
+    const out1099 = run(`node report.js "${TEST_FILE}" --1099 --save`, true);
+    console.log(out1099); // Print full output for debugging
 
     if (fs.existsSync(reportFile)) {
         const testWb = new ExcelJS.Workbook();
