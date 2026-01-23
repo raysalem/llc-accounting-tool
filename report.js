@@ -154,6 +154,16 @@ Example:
     const validVendors = new Map();    // Maps lower -> Display Name
     const vendor1099Map = new Map();   // Maps lower -> { type: 'NEC'|'INT', req: 'YES'|'NO'|'' }
     const vendorDetailsMap = new Map(); // Maps lower -> strict Object of details
+
+    // Helper to safely parse balances (Start/End)
+    // Returns number only if valid number found. Returns null if empty string, null/undefined, or "NA"
+    const parseBalance = (val) => {
+        if (val === null || val === undefined) return null;
+        let s = val.toString().trim();
+        if (s === '' || s.toLowerCase() === 'na' || s.toLowerCase() === 'n/a' || s.toLowerCase() === 'nan') return null;
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+    };
     let payerInfo = {}; // Payer/Company Info Map
     const validCustomers = new Map();  // Maps lower -> Display Name
     const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
@@ -548,8 +558,8 @@ Example:
                     // flip is legacy/ignored now, type is king
                     offset: getVal(row.getCell(colO)),
                     shortName: getVal(row.getCell(colS)),
-                    startBalance: colStart ? (parseFloat(getVal(row.getCell(colStart))) || 0) : 0,
-                    endBalance: colEnd ? (parseFloat(getVal(row.getCell(colEnd))) || 0) : 0
+                    startBalance: colStart ? (parseBalance(getVal(row.getCell(colStart))) || 0) : 0,
+                    endBalance: colEnd ? parseBalance(getVal(row.getCell(colEnd))) : null
                 });
             }
         }
@@ -602,8 +612,8 @@ Example:
                         // Type is now the golden truth for polarity
                         type: colT ? getVal(row.getCell(colT)) : '',
                         offset: colO ? getVal(row.getCell(colO)) : '',
-                        startBalance: colStart ? (parseFloat(getVal(row.getCell(colStart))) || 0) : 0,
-                        endBalance: colEnd ? (parseFloat(getVal(row.getCell(colEnd))) || 0) : 0
+                        startBalance: colStart ? (parseBalance(getVal(row.getCell(colStart))) || 0) : 0,
+                        endBalance: colEnd ? parseBalance(getVal(row.getCell(colEnd))) : null
                     });
                 }
             });
@@ -706,7 +716,7 @@ Example:
                 flip: doFlip,
                 offset: parseInt(confOffset) || 0,
                 startBalance: parseFloat(conf.startBalance) || 0,
-                endBalance: parseFloat(conf.endBalance) || 0,
+                endBalance: conf.endBalance !== null ? parseFloat(conf.endBalance) : null,
                 linkedAccount: doLink ? link : null
             });
         }
@@ -718,7 +728,8 @@ Example:
         console.log(header);
         console.log("-".repeat(header.length + 5));
         sheetConfigs.forEach(s => {
-            console.log(`${s.name.padEnd(30)}${s.type.padEnd(10)}${(s.linkedAccount || 'NONE').padEnd(30)}${(s.flip ? 'YES' : 'NO').padEnd(6)}${s.offset.toString().padEnd(8)}${(s.startBalance ? s.startBalance.toFixed(2) : '0.00').padStart(12)}${(s.endBalance ? s.endBalance.toFixed(2) : '0.00').padStart(12)}`);
+            const endDisp = (s.endBalance !== null) ? s.endBalance.toFixed(2) : "N/A";
+            console.log(`${s.name.padEnd(30)}${s.type.padEnd(10)}${(s.linkedAccount || 'NONE').padEnd(30)}${(s.flip ? 'YES' : 'NO').padEnd(6)}${s.offset.toString().padEnd(8)}${(s.startBalance ? s.startBalance.toFixed(2) : '0.00').padStart(12)}${endDisp.padStart(12)}`);
         });
         console.log("");
     }
@@ -1206,8 +1217,8 @@ Example:
 
         console.log(`[Sheet Stats] "${config.shortName}": Processed ${processedRows} rows. Total Change: ${sheetTotal.toFixed(2)}`);
 
-        // Check End Balance if configured
-        if (config.endBalance && Math.abs(config.endBalance) > 0.001) {
+        // Check End Balance if configured (strict check against null)
+        if (config.endBalance !== null) {
             // For Expense sheets (Credit Cards), the 'sheetTotal' is positive (Expenses).
             // But for the Account Balance, spending should be negative (increasing liability/reducing cash).
             // So we invert the change for the validation math if it's an Expense sheet.
