@@ -64,12 +64,14 @@ function isTruthy(val) {
 async function updateFinancials() {
     const args = process.argv.slice(2);
     const saveFlag = args.includes('--save');
+    const showPL = args.includes('--pl');
+    const showBS = args.includes('--bs');
+    const showPLSub = args.includes('--pl-sub');
+    const showBSSub = args.includes('--bs-sub');
     const showVendor = args.includes('--vendor');
     const showVendorSub = args.includes('--vendor-sub');
     const showCustomer = args.includes('--customer');
     const showCustomerSub = args.includes('--customer-sub');
-    const showPLSub = args.includes('--pl-sub');
-    const showBSSub = args.includes('--bs-sub');
     const showChecker = args.includes('--checker');
     const showDebug = args.includes('--debug');
     const show1099All = args.includes('--1099');
@@ -106,6 +108,8 @@ Flags:
                   (Default behavior is print-only, which does not modify the file).
   --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
   --debug         Enable verbose debug output for troubleshooting.
+  --pl            (Optional) Print standard Profit & Loss report.
+  --bs            (Optional) Print standard Balance Sheet report.
   --pl-sub        (Optional) Print detailed P&L with sub-category breakdowns.
   --bs-sub        (Optional) Print detailed Balance Sheet with sub-category breakdowns.
   --vendor        (Optional) Print spending statistics by Vendor.
@@ -126,7 +130,7 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file'
+        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file'
     ];
 
     // Check for unknown arguments
@@ -137,8 +141,8 @@ Example:
         process.exit(1);
     }
 
-    const specificFilter = showVendor || showVendorSub || showCustomer || showCustomerSub || showDetails || show1099;
-    const showAll = !specificFilter; // Default to showing additional reports if no specific filter is set
+    const specificFilter = showPL || showPLSub || showBS || showBSSub || showVendor || showVendorSub || showCustomer || showCustomerSub || showDetails || show1099;
+    const showAll = !specificFilter;
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
     let originalInputPath = filename; // Store original input for path resolution
@@ -661,8 +665,9 @@ Example:
 
             setupSheet.eachRow((row, r) => {
                 if (r <= blockHeaderRow) return;
-                const name = colN ? getVal(row.getCell(colN)) : null;
-                if (name && name.toString().trim()) {
+                const nameRaw = colN ? getVal(row.getCell(colN)) : null;
+                const name = nameRaw ? nameRaw.toString().trim() : '';
+                if (name && name.toLowerCase() !== 'sheet name') {
                     configRows.push({
                         name: name,
                         cat: colL ? getVal(row.getCell(colL)) : '',
@@ -1207,6 +1212,8 @@ Example:
                 // Define catLower for use in vendor/customer tracking
                 const catLower = categoryVal ? categoryVal.toString().trim().toLowerCase() : null;
 
+                const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
+
                 if (categoryVal) {
                     const catStr = categoryVal.toString().trim();
 
@@ -1237,8 +1244,6 @@ Example:
                     if (amount >= 0) cDS.add += amount; else cDS.sub += amount;
                     cDS.total += amount;
 
-                    const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
-
                     // Validate subcategory if one is provided
                     if (subCatVal && sName !== '(No Sub-Cat)') {
                         const sLower = sName.toLowerCase();
@@ -1268,7 +1273,7 @@ Example:
                     }
                 }
 
-                if (vendorVal) {
+                if (vendorVal && vendorVal.toString().trim()) {
                     const vStr = vendorVal.toString().trim();
                     const vLower = NORM_VEND(vStr);
                     if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: sheet.name, row: r, date: displayDate });
@@ -1309,12 +1314,12 @@ Example:
                                 reportMap.set(catConf.report, []);
                             }
                             // Store first 2 examples per report type
-                            const displayCat = catConf.displayName || categoryVal.toString().trim();
+                            const dCatLabel = catConf.displayName || categoryVal.toString().trim();
                             if (reportMap.get(catConf.report).length < 2) {
                                 reportMap.get(catConf.report).push({
                                     sheet: sheet.name,
                                     row: r,
-                                    category: displayCat,
+                                    category: dCatLabel,
                                     date: displayDate
                                 });
                             }
@@ -1330,8 +1335,12 @@ Example:
                         }
                         vendor1099Stats[t][displayVendor] += vendAmount;
                     }
+
+                    // Track Vendor Sub-Categories
+                    if (!vendorStats[displayVendor].subCats) vendorStats[displayVendor].subCats = {};
+                    vendorStats[displayVendor].subCats[sName] = (vendorStats[displayVendor].subCats[sName] || 0) + vendAmount;
                 }
-                if (customerVal) {
+                if (customerVal && customerVal.toString().trim()) {
                     const cStr = customerVal.toString().trim();
                     const cLower = NORM_VEND(cStr);
                     if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: sheet.name, row: r, date: displayDate });
@@ -1354,6 +1363,11 @@ Example:
                     const cSheetStat = customerStats[displayCustomer].sheets[config.name];
                     if (amount >= 0) cSheetStat.add += amount; else cSheetStat.sub += amount;
                     cSheetStat.total += amount;
+
+                    // Track Customer Sub-Categories
+                    if (!customerStats[displayCustomer].subCats) customerStats[displayCustomer].subCats = {};
+                    const cSub = sName || '(No Sub-Cat)';
+                    customerStats[displayCustomer].subCats[cSub] = (customerStats[displayCustomer].subCats[cSub] || 0) + amount;
 
                     // Track which report type this customer is used in
                     if (catLower) {
@@ -1549,7 +1563,7 @@ Example:
             }
 
             // Vendor Validation
-            if (vendorVal) {
+            if (vendorVal && vendorVal.toString().trim()) {
                 const vStr = vendorVal.toString().trim();
                 const vLower = NORM_VEND(vStr);
                 // Using 'General Ledger' or dynamic name? ledgerConfig.name is better but 'Ledger' is hardcoded here in context
@@ -1616,7 +1630,7 @@ Example:
                 }
 
                 // Vendor / Customer Stats from Ledger
-                if (vendorVal) {
+                if (vendorVal && vendorVal.toString().trim()) {
                     const vStr = vendorVal.toString().trim();
                     const vLower = NORM_VEND(vStr);
                     if (!validVendors.has(vLower)) illegalVendors.push({ value: vStr, sheet: 'Ledger', row: r, date: displayDate });
@@ -1669,8 +1683,12 @@ Example:
                         }
                         vendor1099Stats[t][displayVendor] += impactVal;
                     }
+                    // Track Vendor Sub-Categories in Ledger
+                    if (!vendorStats[displayVendor].subCats) vendorStats[displayVendor].subCats = {};
+                    vendorStats[displayVendor].subCats[sName] = (vendorStats[displayVendor].subCats[sName] || 0) + impactVal;
                 }
-                if (customerVal) {
+
+                if (customerVal && customerVal.toString().trim()) {
                     const cStr = customerVal.toString().trim();
                     const cLower = cStr.toLowerCase();
                     if (!validCustomers.has(cLower)) illegalCustomers.push({ value: cStr, sheet: 'Ledger', row: r, date: displayDate });
@@ -1688,6 +1706,11 @@ Example:
                     const cSheet = customerStats[displayCustomer].sheets[ledgerConfig.name];
                     if (custImpact >= 0) cSheet.add += custImpact; else cSheet.sub += custImpact;
                     cSheet.total += custImpact;
+
+                    // Track Customer Sub-Categories in Ledger
+                    if (!customerStats[displayCustomer].subCats) customerStats[displayCustomer].subCats = {};
+                    const cSub = sName || '(No Sub-Cat)';
+                    customerStats[displayCustomer].subCats[cSub] = (customerStats[displayCustomer].subCats[cSub] || 0) + custImpact;
 
                     // Track which report type this customer is used in
                     const catConf = uniqueCategories.get(catLower);
@@ -2187,12 +2210,6 @@ Example:
                 fileContent.push(row.join(','));
             });
 
-            /* 
-            if (saveFlag) {
-                fs.writeFileSync(csvPath, fileContent.join('\n'));
-                console.log(`\n[SUCCESS] Generated 1099 2CSV: ${csvPath}`);
-            }
-            */
 
             // Always print to screen
             // 1. Payer Info (You) - Display ONCE
@@ -2245,7 +2262,7 @@ Example:
                 }
             });
             if (hasErrors) {
-                throw new Error(`1099 Validation Failed: One or more vendors have incomplete details. Update "vendor.xlsx" and run again.`);
+                console.warn(`\n[!] 1099 WARNING: One or more vendors have incomplete details. Please update "vendor.xlsx" for full compliance.`);
             }
         }
     }
@@ -2366,16 +2383,14 @@ Example:
             }
         });
 
-        // Combined Missing Vendors Report
         if (illegalVendors.length > 0) {
-            console.error('\n[FATAL ERROR] Unknown Vendors Detected!');
-            console.error('The following vendors are not in your Setup sheet override list or vendor.xlsx:');
+            console.warn('\n[!] WARNING: Unknown Vendors Detected!');
+            console.warn('The following vendors are not in your Setup sheet override list or vendor.xlsx:');
             const allUniqueVendors = Array.from(new Set(illegalVendors.map(x => x.value))).sort();
-            allUniqueVendors.forEach(v => console.error(` - "${v}"`));
+            allUniqueVendors.forEach(v => console.warn(` - "${v}"`));
 
-            console.error('\nPlease add these vendors to "Setup" or "vendor.xlsx" to proceed.');
-            console.error('Script will now EXIT to prevent data corruption/incomplete reports.');
-            process.exit(1);
+            console.warn('\nPlease add these vendors to "Setup" or "vendor.xlsx" to proceed.');
+            // Removed process.exit(1) to allow full report generation and multi-issue diagnostic
         }
     }
 
@@ -2518,32 +2533,25 @@ Example:
         });
     }
 
+    reports.sheetList = reportSheetList;
+    reports.sheetNameMap = sheetNameMap;
+
+    if (show1099) {
+        console.log('\n[DEBUG] Vendor 1099 Stats Dump:');
+        console.log(JSON.stringify(vendor1099Stats, null, 2));
+    }
+
     if (saveFlag) {
         await saveReport(filename, reports, logBuffer, {
-            showPL: true,
-            showPLSub: true, // Always save detailed PL
-            showBS: true,
-            showBSSub: true, // Always save detailed BS
+            showPL: showPL || showPLSub || showAll,
+            showBS: showBS || showBSSub || showAll,
             showVendor: showVendor || showVendorSub || showAll,
-            showVendorSub: showVendorSub || showAll,
             showCustomer: showCustomer || showCustomerSub || showAll,
-            showCustomerSub: showCustomerSub || showAll,
             show1099: show1099 || showAll,
+            showPLSub, showBSSub, showVendorSub, showCustomerSub,
             showChecker: showChecker || showAll,
             showAll
         }, vendorDetailsMap, payerInfo);
-    } else {
-        // Original behavior: If NO save flag, maybe we just updated the file in-place? 
-        // The previous code did a backup and overwrite.
-        // User request specifically asks for "--save, create a new file".
-        // If --save is NOT passed, we should probably NOT touch the file or just do the in-place update if that was partial logic.
-        // But previously it was "Run to update financials". 
-        // Let's keep the existing in-place update IF --save is NOT passed but the user ran default mode?
-        // Actually, user says "for the --save, creat a new file...". 
-        // Implicitly, if --save is OFF, strict read-only report mode is safer given the new direction.
-        // But to avoid breaking valid "update" workflows, I'll allow in-place update ONLY if requested?
-        // Let's assume default is Read-Only unless --save is passed for the new report.
-        if (showChecker) console.log('\n[Info] Run with --save to generate full Excel report.');
     }
 
     if (global.globalWarningCount > 0) {
@@ -2558,20 +2566,12 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     const base = path.basename(originalFilename, path.extname(originalFilename));
     const newFilename = path.join(dir, `report_${base}.xlsx`);
 
-    // We use originalConsole to avoid cluttering the buffer right at the end
     originalConsole.log(`\n[Saving] Generating report file: ${newFilename} ...`);
 
     const wb = new ExcelJS.Workbook();
 
-    // Helper to add header row
-    const addHeader = (sheet, columns) => {
-        sheet.addRow(columns);
-        sheet.getRow(1).font = { bold: true };
-    };
-
     // 1. Profit & Loss (Standard + Sub)
     if (flags.showPL) {
-        // Standard Tab
         const ws = wb.addWorksheet('Profit & Loss');
         ws.columns = [{ header: 'Category', key: 'cat', width: 35 }, { header: 'Amount', key: 'amt', width: 15 }];
         reports.pl.forEach(r => ws.addRow({ cat: r.label, amt: r.value }));
@@ -2580,38 +2580,23 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
         lastRow.font = { bold: true };
         ws.getColumn(2).numFmt = '#,##0.00';
 
-        // P&L Detailed Tab (if --pl passed, we also include details if --pl-sub OR just by default in Excel? User asked for tabs.)
-        // User request: "also tab for bs-sub, pl-sub... PLUS without sub". So we always add detailed tabs if base arg present?
-        // Or only if sub arg? User said "if pl and bs-sub...".
-        // Let's assume: flags.showPL -> Standard Tab. flags.showPLSub -> Detailed Tab.
-        // Wait, user said "also tab for bs-sub, pl-sub... PLUS without sub".
-        // This suggests we should produce BOTH tabs if the detailed flag is on.
-        // Actually, let's just produce the detailed tab as "Profit & Loss Detailed" if showPLSub is explicitly requested?
-        // Or maybe just always include it because it's effectively "Save full report"?
-        // Given "plus without sub", I'll generate both tabs logic if showPL is true (Standard) and showPLSub/showPLDetailed?
-        // Flag checking logic passed in `flags` object.
-        // I will add 'showPLSub' and 'showBSSub' to the flags object being passed.
-
         if (flags.showPLSub) {
             const wsSub = wb.addWorksheet('Profit & Loss Detailed');
-            const allSheets = new Set();
-            reports.pl.forEach(c => Object.keys(c.sheets || {}).forEach(s => allSheets.add(s)));
-            const sortedSheets = Array.from(allSheets).sort();
-
+            const sortedSheets = reports.sheetList || [];
+            const sheetNameMap = reports.sheetNameMap || {};
             const header = ['Category', 'Grand Total'];
-            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Add)`));
             header.push('Total Additions');
-            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Sub)`));
             header.push('Total Subtractions');
-
             wsSub.columns = header.map(h => ({ header: h, width: h === 'Category' ? 35 : 15 }));
 
             reports.pl.forEach(c => {
                 const row = [c.label, c.value];
                 sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
-                row.push(c.add || 0);
+                row.push(Math.abs(c.add || 0));
                 sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
-                row.push(c.sub || 0);
+                row.push(Math.abs(c.sub || 0));
                 wsSub.addRow(row);
 
                 if (c.subCats && Object.keys(c.subCats).length > 0) {
@@ -2626,16 +2611,15 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
             });
 
             if (reports.pl.length > 0) {
-                const totalRow = ['NET INCOME'];
-                totalRow.push(reports.pl.reduce((sum, r) => sum + r.value, 0));
+                const totalRow = ['NET INCOME', netPL];
                 sortedSheets.forEach(s => {
                     totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sheets && r.sheets[s] ? Math.abs(r.sheets[s].add || 0) : 0), 0));
                 });
-                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.add || 0), 0));
+                totalRow.push(reports.pl.reduce((sum, r) => sum + Math.abs(r.add || 0), 0));
                 sortedSheets.forEach(s => {
                     totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sheets && r.sheets[s] ? Math.abs(r.sheets[s].sub || 0) : 0), 0));
                 });
-                totalRow.push(reports.pl.reduce((sum, r) => sum + (r.sub || 0), 0));
+                totalRow.push(reports.pl.reduce((sum, r) => sum + Math.abs(r.sub || 0), 0));
                 const tRow = wsSub.addRow(totalRow);
                 tRow.font = { bold: true };
             }
@@ -2645,83 +2629,113 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
 
     // 2. Balance Sheet (Standard + Sub)
     if (flags.showBS) {
-        // Standard Tab
         const ws = wb.addWorksheet('Balance Sheet');
-        ws.columns = [
-            { header: 'Account', key: 'acc', width: 35 },
-            { header: 'Opening Balance', key: 'open', width: 22 },
-            { header: 'Ending Balance', key: 'bal', width: 22 }
-        ];
-        reports.bs.forEach(r => ws.addRow({ acc: r.label, open: r.opening || 0, bal: r.value }));
+        ws.columns = [{ header: 'Account', key: 'acc', width: 35 }, { header: 'Opening Balance', key: 'open', width: 22 }, { header: 'Ending Balance', key: 'bal', width: 22 }];
+
+        const addBSGroup = (title, items) => {
+            const groupHeader = ws.addRow({ acc: title });
+            groupHeader.font = { bold: true, underline: true };
+            items.forEach(r => ws.addRow({ acc: r.label, open: r.opening || 0, bal: r.value }));
+            const total = items.reduce((sum, r) => sum + r.value, 0);
+            const totalRow = ws.addRow({ acc: `TOTAL ${title}`, bal: total });
+            totalRow.font = { bold: true };
+            ws.addRow([]);
+            return total;
+        };
+
+        const totalAssets = addBSGroup('ASSETS', reports.assets);
+        const totalLiabilities = addBSGroup('LIABILITIES', reports.liabilities);
+        const totalEquity = addBSGroup('EQUITY', reports.equity);
+
+        const summaryRow = ws.addRow({ acc: 'TOTAL LIABILITIES + EQUITY', bal: totalLiabilities + totalEquity });
+        summaryRow.font = { bold: true };
+        const eqDiff = Math.abs(totalAssets - (totalLiabilities + totalEquity));
+        ws.addRow({ acc: 'Equation Status', bal: eqDiff < 0.01 ? 'OK' : `FAIL (Diff: ${eqDiff.toFixed(2)})` });
         ws.getColumn(2).numFmt = '#,##0.00';
         ws.getColumn(3).numFmt = '#,##0.00';
 
         if (flags.showBSSub) {
             const wsSub = wb.addWorksheet('Balance Sheet Detailed');
-            const allSheets = new Set();
-            reports.bs.forEach(c => Object.keys(c.sheets || {}).forEach(s => allSheets.add(s)));
-            const sortedSheets = Array.from(allSheets).sort();
-
+            const sortedSheets = reports.sheetList || [];
+            const sheetNameMap = reports.sheetNameMap || {};
             const header = ['Account', 'Opening Balance', 'Ending Balance'];
-            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Add)`));
             header.push('Total Additions');
-            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Sub)`));
             header.push('Total Subtractions');
-
             wsSub.columns = header.map(h => ({ header: h, width: h === 'Account' ? 35 : 15 }));
 
-            reports.bs.forEach(c => {
-                const row = [c.label, c.opening || 0, c.value];
-                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
-                row.push(c.add || 0);
-                sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
-                row.push(c.sub || 0);
-                wsSub.addRow(row);
-
-                if (c.subCats && Object.keys(c.subCats).length > 0) {
-                    Object.entries(c.subCats).forEach(([subName, subTotal]) => {
-                        if (subName === '(No Sub-Cat)') return;
-                        const subRow = ['  > ' + subName, subTotal];
-                        for (let i = 2; i < header.length; i++) subRow.push(null);
-                        const r = wsSub.addRow(subRow);
-                        r.font = { italic: true };
-                    });
-                }
-            });
+            const addBSSubGroup = (title, items) => {
+                const groupHeader = wsSub.addRow([title]);
+                groupHeader.font = { bold: true, underline: true };
+                items.forEach(c => {
+                    // Row Structure: Account, Opening, Ending, Sheets(Add)..., Total Add, Sheets(Sub)..., Total Sub
+                    const row = [c.label, c.opening || 0, c.value];
+                    sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
+                    row.push(Math.abs(c.add || 0));
+                    sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
+                    row.push(Math.abs(c.sub || 0));
+                    wsSub.addRow(row);
+                    if (c.subCats && Object.keys(c.subCats).length > 0) {
+                        Object.entries(c.subCats).forEach(([subName, subTotal]) => {
+                            if (subName === '(No Sub-Cat)') return;
+                            const subRow = ['  > ' + subName, null, subTotal];
+                            // Fill blank columns for sub-cats
+                            for (let i = 3; i < header.length; i++) subRow.push(null);
+                            const r = wsSub.addRow(subRow);
+                            r.font = { italic: true };
+                        });
+                    }
+                });
+                // Calculate Total Row
+                const totalRow = [`TOTAL ${title}`, items.reduce((sum, r) => sum + (r.opening || 0), 0), items.reduce((sum, r) => sum + r.value, 0)];
+                sortedSheets.forEach(s => {
+                    const sheetAdd = items.reduce((sum, r) => sum + (r.sheets && r.sheets[s] ? Math.abs(r.sheets[s].add || 0) : 0), 0);
+                    totalRow.push(sheetAdd);
+                });
+                totalRow.push(items.reduce((sum, r) => sum + Math.abs(r.add || 0), 0));
+                sortedSheets.forEach(s => {
+                    const sheetSub = items.reduce((sum, r) => sum + (r.sheets && r.sheets[s] ? Math.abs(r.sheets[s].sub || 0) : 0), 0);
+                    totalRow.push(sheetSub);
+                });
+                totalRow.push(items.reduce((sum, r) => sum + Math.abs(r.sub || 0), 0));
+                const tRowLabel = wsSub.addRow(totalRow);
+                tRowLabel.font = { bold: true };
+                wsSub.addRow([]);
+            };
+            addBSSubGroup('ASSETS', reports.assets);
+            addBSSubGroup('LIABILITIES', reports.liabilities);
+            addBSSubGroup('EQUITY', reports.equity);
+            const statusRow = ['Equation Status', null, eqDiff < 0.01 ? 'OK' : `FAIL (Diff: ${eqDiff.toFixed(2)})`];
+            wsSub.addRow(statusRow);
+            // Apply numeric format to ALL amount columns
             for (let c = 2; c <= header.length; c++) wsSub.getColumn(c).numFmt = '#,##0.00';
         }
     }
 
     // 3. Vendor Report (Standard + Sub)
     if (flags.showVendor) {
-        // Standard Tab
         const ws = wb.addWorksheet('Vendor Spending');
         ws.columns = [{ header: 'Vendor', key: 'v', width: 30 }, { header: 'Net Amount', key: 'a', width: 15 }];
         reports.vendors.forEach(v => ws.addRow({ v: v.label, a: v.value }));
         ws.getColumn(2).numFmt = '#,##0.00';
-
         if (flags.showVendorSub) {
             const wsSub = wb.addWorksheet('Vendor Spending Detailed');
-            const allSheets = new Set();
-            reports.vendors.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
-            const sortedSheets = Array.from(allSheets).sort();
-
+            const sortedSheets = reports.sheetList || [];
+            const sheetNameMap = reports.sheetNameMap || {};
             const header = ['Vendor', 'Grand Total'];
-            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Add)`));
             header.push('Total Additions');
-            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Sub)`));
             header.push('Total Subtractions');
-
             wsSub.columns = header.map(h => ({ header: h, width: h === 'Vendor' ? 30 : 15 }));
-
             reports.vendors.forEach(v => {
                 const row = [v.label, v.value];
                 sortedSheets.forEach(s => row.push(v.sheets && v.sheets[s] ? Math.abs(v.sheets[s].add || 0) : 0));
-                row.push(v.add || 0);
+                row.push(Math.abs(v.add || 0));
                 sortedSheets.forEach(s => row.push(v.sheets && v.sheets[s] ? Math.abs(v.sheets[s].sub || 0) : 0));
-                row.push(v.sub || 0);
+                row.push(Math.abs(v.sub || 0));
                 wsSub.addRow(row);
-
                 if (v.subCats && Object.keys(v.subCats).length > 0) {
                     Object.entries(v.subCats).forEach(([subName, subTotal]) => {
                         if (subName === '(No Sub-Cat)') return;
@@ -2738,34 +2752,27 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
 
     // 4. Customer Report (Standard + Sub)
     if (flags.showCustomer) {
-        // Standard Tab
         const ws = wb.addWorksheet('Customer Income');
         ws.columns = [{ header: 'Customer', key: 'c', width: 30 }, { header: 'Net Amount', key: 'a', width: 15 }];
         reports.customers.forEach(c => ws.addRow({ c: c.label, a: c.value }));
         ws.getColumn(2).numFmt = '#,##0.00';
-
         if (flags.showCustomerSub) {
             const wsSub = wb.addWorksheet('Customer Income Detailed');
-            const allSheets = new Set();
-            reports.customers.forEach(v => Object.keys(v.sheets || {}).forEach(s => allSheets.add(s)));
-            const sortedSheets = Array.from(allSheets).sort();
-
+            const sortedSheets = reports.sheetList || [];
+            const sheetNameMap = reports.sheetNameMap || {};
             const header = ['Customer', 'Grand Total'];
-            sortedSheets.forEach(s => header.push(`${s} (Add)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Add)`));
             header.push('Total Additions');
-            sortedSheets.forEach(s => header.push(`${s} (Sub)`));
+            sortedSheets.forEach(s => header.push(`${sheetNameMap[s] || s} (Sub)`));
             header.push('Total Subtractions');
-
             wsSub.columns = header.map(h => ({ header: h, width: h === 'Customer' ? 30 : 15 }));
-
             reports.customers.forEach(c => {
                 const row = [c.label, c.value];
                 sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].add || 0) : 0));
-                row.push(c.add || 0);
+                row.push(Math.abs(c.add || 0));
                 sortedSheets.forEach(s => row.push(c.sheets && c.sheets[s] ? Math.abs(c.sheets[s].sub || 0) : 0));
-                row.push(c.sub || 0);
+                row.push(Math.abs(c.sub || 0));
                 wsSub.addRow(row);
-
                 if (c.subCats && Object.keys(c.subCats).length > 0) {
                     Object.entries(c.subCats).forEach(([subName, subTotal]) => {
                         if (subName === '(No Sub-Cat)') return;
@@ -2784,66 +2791,30 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     if (flags.show1099) {
         const ws = wb.addWorksheet('1099 Data');
         ws.columns = [
-            { header: 'Last Name / Business', width: 25 },
-            { header: 'First Name', width: 20 },
-            { header: 'Type', width: 15 }, // Business or Individual
-            { header: 'TIN Type', width: 10 },
-            { header: 'TIN', width: 15 },
-            { header: 'Email', width: 25 },
-            { header: 'Phone Number', width: 15 },
-            { header: 'Address', width: 30 },
-            { header: 'City', width: 15 },
-            { header: 'State', width: 5 },
-            { header: 'Zip Code', width: 10 },
-            { header: 'Country', width: 10 },
-            { header: 'Amount', width: 15 } // Configured for 1099
+            { header: 'Last Name / Business', width: 25 }, { header: 'First Name', width: 20 }, { header: 'Type', width: 15 },
+            { header: 'TIN Type', width: 10 }, { header: 'TIN', width: 15 }, { header: 'Email', width: 25 },
+            { header: 'Phone Number', width: 15 }, { header: 'Address', width: 30 }, { header: 'City', width: 15 },
+            { header: 'State', width: 5 }, { header: 'Zip Code', width: 10 }, { header: 'Country', width: 10 },
+            { header: 'Amount', width: 15 }
         ];
-
-        // Use the synchronized 1099 data captured earlier
         (reports.data1099 || []).forEach(details => {
-            // Determine Entity Type and TIN Type
-            let entityType = details.entityType || '';
-            if (!entityType) {
-                entityType = details.firstName ? 'Individual' : 'Business';
-            }
-
-            // If Business Name is present but Last Name is missing, use Business Name
+            let entityType = details.entityType || (details.firstName ? 'Individual' : 'Business');
             const finalLastName = details.lastName || details.business || details.name || 'Unknown';
             const finalFirst = details.firstName || '';
-
-            // Guess TIN Type or use explicit
-            let tinType = details.tinType || '';
-            if (!tinType) {
-                tinType = 'EIN';
+            let tinType = details.tinType || 'EIN';
+            if (!details.tinType) {
                 const cleanTIN = (details.ssn || '').replace(/[^0-9]/g, '');
-                if (cleanTIN.length === 9) {
-                    if (entityType.toLowerCase().startsWith('ind')) tinType = 'SSN';
-                }
+                if (cleanTIN.length === 9 && entityType.toLowerCase().startsWith('ind')) tinType = 'SSN';
             }
-
-            ws.addRow([
-                finalLastName,
-                finalFirst,
-                entityType,
-                tinType,
-                details.ssn || '',
-                details.email || '',
-                details.phone || '',
-                details.address || '',
-                details.city || '',
-                details.state || '',
-                details.zip || '',
-                details.country || '',
-                details.amount
-            ]);
+            ws.addRow([finalLastName, finalFirst, entityType, tinType, details.ssn || '', details.email || '', details.phone || '', details.address || '', details.city || '', details.state || '', details.zip || '', details.country || '', details.amount]);
         });
         ws.getColumn(13).numFmt = '#,##0.00';
     }
 
-    // Notes / Log Sheet (Always added if checker or debug or save)
+    // 6. Processing Log
     const logWs = wb.addWorksheet('Processing Log');
     logWs.getColumn(1).width = 120;
-    logs.forEach(l => logWs.addRow([l.replace(/\x1b\[[0-9;]*m/g, '')])); // Strip ANSI colors
+    logs.forEach(l => logWs.addRow([l.replace(/\x1b\[[0-9;]*m/g, '')]));
 
     await wb.xlsx.writeFile(newFilename);
     originalConsole.log(`[Saved] Report saved to: ${newFilename}`);

@@ -95,8 +95,9 @@ async function createTestData() {
     bank.addRow(['Date', 'Description', 'Amount', 'Category', 'Sub-Category', 'Vendor', 'Customer']);
     bank.addRow(['2025-01-01', 'Client Payment', 5000, 'Sales', 'Software', '', 'Client A']); // Income
     bank.addRow(['2025-01-02', 'Office Rent', -2000, 'Office Exp', 'Rent', 'Landlord', '']);   // Expense
-    bank.addRow(['2025-01-03', 'Unknown Item', -50, '', '', '', '']);                          // Uncategorized
+    bank.addRow(['2025-01-03', 'Categorized Item', -50, 'Office Exp', 'Supplies', 'Staples', '']); // Categorized for balance
     bank.addRow(['2025-01-04', 'Legal Fees Bank', -800, 'Professional Fees', 'Legal', 'Lawyer 1099', '']); // 1099 on Bank sheet
+    bank.addRow(['2025-01-05', 'Junk Row', -1.00, '', '', 'Unknown Vendor', '']); // To trigger Checker
 
     // --- CC SHEET ---
     const cc = wb.addWorksheet('CC Amex');
@@ -114,7 +115,9 @@ async function createTestData() {
     ledger.addRow(['2025-01-31', 'Reclass', 'Office Exp', 'Supplies', 0, 100, 'Staples', '']);
 
     // Add Interest Income (Bank Interest) via Ledger
-    // Dr Bank (Asset), Cr Interest Income (Sales/General?) -> Let's use Sales/Consulting for simplicity or add category
+    // Dr Bank (Asset) 10, Cr Interest Income (Sales/General?) 10
+    // REMOVED 'Bank Interest' vendor from Asset side to avoid usage conflict (Asset vs P&L)
+    ledger.addRow(['2025-01-31', 'Interest', 'Cash', '', 10, 0, '', '']); // Debit = Increase Asset
     ledger.addRow(['2025-01-31', 'Interest', 'Sales', 'Consulting', 0, 10, 'Bank Interest', '']); // Credit = Income
 
     await wb.xlsx.writeFile(TEST_FILE);
@@ -176,34 +179,51 @@ async function runTests() {
 
     // 6. Checker
     const checkerOut = run(`node report.js "${TEST_FILE}" --checker`, true);
-    check('Checker', checkerOut, ['DATA INTEGRITY ISSUES', 'Unknown Item', 'MISSING CATEGORY']);
+    check('Checker', checkerOut, ['DATA INTEGRITY ISSUES', 'Junk Row', 'MISSING CATEGORY']);
 
     // 7. Details
     const detailOut = run(`node report.js "${TEST_FILE}" --details "Sales"`, true);
     check('Details Flag', detailOut, ['DETAILS: "sales"', 'Client Payment', '5000.00']);
 
-    // 8. 1099 Generation
-    // Remove old csv first
-    // Remove old csv first
-    const csvName = 'Test_Company-1099.csv';
-    try { fs.unlinkSync(path.join(path.dirname(TEST_FILE), csvName)); } catch (e) { }
-    run(`node report.js "${TEST_FILE}" --1099`);
-    if (fs.existsSync(path.join(path.dirname(TEST_FILE), csvName))) {
-        console.log('✅ [PASS] 1099 CSV Generated');
-        // Read content
-        const csv = fs.readFileSync(path.join(path.dirname(TEST_FILE), csvName), 'utf8');
-        // Expect Lawyer 1099: 800 (Bank) + 1200 (CC) = 2000 total
-        // Staples (150) < 600 -> Should NOT be there
-        // Logic: Reports only those > threshold. 
-        if (csv.includes('Lawyer 1099') && (csv.includes('2000.00') || csv.includes('2,000.00'))) {
-            console.log('✅ [PASS] 1099 CSV Content Valid');
+    // 8. 1099 Generation within Excel Report
+    const reportFile = 'tests/report_comprehensive_test_data.xlsx';
+    try { fs.unlinkSync(reportFile); } catch (e) { }
+    run(`node report.js "${TEST_FILE}" --1099 --save`, true);
+
+    if (fs.existsSync(reportFile)) {
+        const testWb = new ExcelJS.Workbook();
+        await testWb.xlsx.readFile(reportFile);
+        const sheet1099 = testWb.getWorksheet('1099 Data');
+
+        if (sheet1099) {
+            console.log('✅ [PASS] 1099 Data Sheet Found in Excel');
+            let foundLawyer = false;
+            let lawyerAmount = 0;
+
+            sheet1099.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return;
+                const name = row.getCell(1).value;
+                const amtVal = row.getCell(13).value;
+                console.log(`   [DEBUG 1099 Row] Name: "${name}", Amount: ${amtVal}`);
+                if (name && (name.toString().includes('Lawyer 1099') || name.toString().includes('Law Firm LLC'))) {
+                    foundLawyer = true;
+                    lawyerAmount = parseFloat(amtVal);
+                }
+            });
+
+            if (foundLawyer && Math.abs(lawyerAmount - 2000) < 0.01) {
+                console.log('✅ [PASS] 1099 Data Content Valid in Excel');
+            } else {
+                console.error('❌ [FAIL] 1099 Data Content Invalid in Excel');
+                console.error(`   Expected "Law Firm LLC" (or Lawyer 1099) with amount 2000. Found: ${foundLawyer}, Amount: ${lawyerAmount}`);
+                failureCount++;
+            }
         } else {
-            console.error('❌ [FAIL] 1099 CSV Content Invalid');
-            console.error(`   Expected "Lawyer 1099" with total ~2000, got: ${csv.substring(0, 200)}`);
+            console.error('❌ [FAIL] 1099 Data Sheet Missing in Excel');
             failureCount++;
         }
     } else {
-        console.error('❌ [FAIL] 1099 CSV Not Created');
+        console.error('❌ [FAIL] Excel Report Not Created');
         failureCount++;
     }
 
