@@ -131,11 +131,21 @@ Example:
     }
 
     const setupSheet = workbook.getWorksheet('Setup');
-    const ledgerSheet = workbook.getWorksheet('Ledger');
+    // Try 'General Ledger' first, then 'Ledger', then case-insensitive scan
+    let ledgerSheet = workbook.getWorksheet('General Ledger') || workbook.getWorksheet('Ledger');
+    if (!ledgerSheet) {
+        ledgerSheet = workbook.worksheets.find(s => {
+            const n = s.name.trim().toLowerCase();
+            return n === 'general ledger' || n === 'ledger';
+        });
+    }
+
     let summarySheet = workbook.getWorksheet('Summary');
 
     if (!setupSheet || !ledgerSheet) {
-        console.error('Error: Mandatory sheets (Setup or Ledger) missing.');
+        console.error('\n[ERROR] Mandatory sheets missing from workbook:');
+        if (!setupSheet) console.error(' - "Setup" sheet is missing.');
+        if (!ledgerSheet) console.error(' - "General Ledger" (or "Ledger") sheet is missing.');
         return;
     }
 
@@ -149,6 +159,8 @@ Example:
     const uniqueCategories = new Map(); // Maps lower -> { report, accountType, displayName }
     const validSubCategories = new Set(); // Set of all valid subcategories from Setup
     const sheetConfigs = [];
+    const processedSheetTotals = {}; // Track actual processed totals per sheet (post-flip)
+    const walletCheckResults = []; // Store wallet validation data
 
     const catStats = {};
     const vendorStats = {};
@@ -284,8 +296,8 @@ Example:
     // Since SheetInfo is typically to the right or below, we prefer the 'last' occurrences of these names.
     const colSheetName = getCol('sheetnameconfig') || getCol('sheetname', 'last');
     const colSheetType = getCol('sheettype') || getCol('type', 'last');
-    // The user renamed 'Category' to 'Link Category' for the asset account linkage
-    const colSheetCat = getCol('linkcategory') || getCol('linkcat') || getCol('category', 'last');
+    // The user renamed 'Category' to 'Link Asset' for the asset account linkage
+    const colSheetCat = getCol('linkasset') || getCol('linkcategory') || getCol('linkcat') || getCol('category', 'last');
     const colShortName = getCol('shortname', 'last') || getCol('short', 'last');
     const colFlip = getCol('flippolarityyesno', 'last') || getCol('flippolarity', 'last') || getCol('flip', 'last');
     const colOffset = getCol('headerrow', 'last') || getCol('offset', 'last');
@@ -518,10 +530,13 @@ Example:
 
             const colN = headerCols['sheetname'] || headerCols['sheetnameconfig'] || 1;
             const colT = headerCols['sheettype'] || headerCols['type'] || 2;
-            const colC = headerCols['linkcategory'] || headerCols['linkcat'] || headerCols['category'] || 0;
+            const colC = headerCols['linkasset'] || headerCols['linkcategory'] || headerCols['linkcat'] || headerCols['category'] || 0;
             const colF = headerCols['flippolarityyesno'] || headerCols['flippolarity'] || headerCols['flip'] || 3;
             const colO = headerCols['headerrow'] || headerCols['offset'] || 4;
             const colS = headerCols['shortnames'] || headerCols['shortname'] || 5;
+
+            const colStart = headerCols['start'] || headerCols['startbalance'] || 0;
+            const colEnd = headerCols['end'] || headerCols['endbalance'] || headerCols['endingbalance'] || 0;
 
             const endRow = parseInt(match[4]);
             for (let r = startRow + 1; r <= endRow; r++) {
@@ -530,30 +545,70 @@ Example:
                     name: getVal(row.getCell(colN)),
                     type: getVal(row.getCell(colT)),
                     cat: colC ? getVal(row.getCell(colC)) : '',
-                    flip: getVal(row.getCell(colF)),
+                    // flip is legacy/ignored now, type is king
                     offset: getVal(row.getCell(colO)),
-                    shortName: getVal(row.getCell(colS))
+                    shortName: getVal(row.getCell(colS)),
+                    startBalance: colStart ? (parseFloat(getVal(row.getCell(colStart))) || 0) : 0,
+                    endBalance: colEnd ? (parseFloat(getVal(row.getCell(colEnd))) || 0) : 0
                 });
             }
         }
     } else {
-        if (showChecker) console.log('[DEBUG] SheetInfo Table missing. Scanning rows using detected headers...');
-        // Fallback: Scan entire sheet using found column indices
-        if (colSheetName) {
+        if (showChecker) console.log('[DEBUG] SheetInfo Table missing. Scanning for "Sheet Name" header block...');
+
+        // Scan for header row containing "Sheet Name"
+        let blockHeaderRow = -1;
+        let blockMap = {};
+
+        setupSheet.eachRow((row, r) => {
+            if (blockHeaderRow !== -1) return; // Found already
+            let hasName = false;
+            row.eachCell((cell, c) => {
+                const v = getVal(cell).toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (v.includes('sheetname')) hasName = true;
+            });
+
+            if (hasName) {
+                blockHeaderRow = r;
+                // Map this row
+                row.eachCell((cell, c) => {
+                    const v = getVal(cell).toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                    blockMap[v] = c;
+                    // Handle aliases
+                    if (v === 'category') blockMap['linkasset'] = c;
+                });
+            }
+        });
+
+        if (blockHeaderRow !== -1) {
+            const colN = blockMap['sheetname'] || blockMap['sheetnameconfig'];
+            // The user says "Link Asset", "Link Category", or "Category"
+            const colL = blockMap['linkasset'] || blockMap['linkcategory'] || blockMap['linkcat'] || blockMap['category'];
+            const colStart = blockMap['start'] || blockMap['startbalance'];
+            const colEnd = blockMap['end'] || blockMap['endbalance'] || blockMap['endingbalance'];
+            const colO = blockMap['headerrow'] || blockMap['offset'];
+            const colT = blockMap['type'] || blockMap['sheettype']; // Optional now
+
+            if (showChecker) console.log(`[Setup] Found SheetInfo headers on Row ${blockHeaderRow}. Link Col: ${colL}, Start Col: ${colStart}, End Col: ${colEnd}`);
+
             setupSheet.eachRow((row, r) => {
-                if (r === 1) return;
-                const name = getVal(row.getCell(colSheetName));
+                if (r <= blockHeaderRow) return;
+                const name = colN ? getVal(row.getCell(colN)) : null;
                 if (name && name.toString().trim()) {
                     configRows.push({
                         name: name,
-                        type: colSheetType ? getVal(row.getCell(colSheetType)) : '',
-                        cat: colSheetCat ? getVal(row.getCell(colSheetCat)) : '',
-                        flip: colFlip ? getVal(row.getCell(colFlip)) : '',
-                        offset: colOffset ? getVal(row.getCell(colOffset)) : '',
-                        shortName: colShortName ? getVal(row.getCell(colShortName)) : ''
+                        cat: colL ? getVal(row.getCell(colL)) : '',
+                        shortName: colS ? getVal(row.getCell(colS)) : '',
+                        // Type is now the golden truth for polarity
+                        type: colT ? getVal(row.getCell(colT)) : '',
+                        offset: colO ? getVal(row.getCell(colO)) : '',
+                        startBalance: colStart ? (parseFloat(getVal(row.getCell(colStart))) || 0) : 0,
+                        endBalance: colEnd ? (parseFloat(getVal(row.getCell(colEnd))) || 0) : 0
                     });
                 }
             });
+        } else {
+            console.warn("[!] WARNING: Could not find 'Sheet Name' header row. Sheet configuration may fail.");
         }
     }
 
@@ -563,14 +618,25 @@ Example:
     for (const conf of configRows) {
         const confSheetName = conf.name;
         if (confSheetName) {
-            const cType = conf.type ? conf.type.toString().trim() : '';
-            const confFlip = conf.flip;
-            const confOffset = conf.offset;
+            const cType = (conf.type || '').toString().trim().toLowerCase();
+            const confOffset = conf.offset; // Keep confOffset as it's still used
 
-            let link = null;
+            // Polarity Logic based on STRICT User Type
+            let doFlip = false;
+            let doLink = true;
+            let link = null; // Initialize link here
+
+            if (cType === 'expense') {
+                doFlip = true;
+            } else if (cType === 'income') {
+                doFlip = false;
+            } else if (cType === 'ledger') {
+                doFlip = false;
+                doLink = false; // Ledger never links automatically
+            }
 
             // Linkage Priority 0: Explicit 'Category' column in SheetInfo
-            if (conf.cat) {
+            if (doLink && conf.cat) {
                 const explicitCat = conf.cat.toString().trim();
                 const lowerEC = explicitCat.toLowerCase();
                 // Check if this is a direct match to a display name or key
@@ -587,7 +653,7 @@ Example:
                 }
             }
 
-            if (!link && cType) {
+            if (doLink && !link && cType) {
                 const targetType = cType.toLowerCase();
                 // Linkage Priority 1: Exact Name Match with Balance Sheet Categories
                 for (const [catRaw, catData] of uniqueCategories.entries()) {
@@ -618,13 +684,13 @@ Example:
             }
 
             if (showChecker) {
-                console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${link || 'NONE'}"`);
-                if (!link) {
+                console.log(`[Linkage Result] Sheet "${confSheetName}" (Type: "${cType}") -> Linked to: "${(doLink && link) || 'NONE'}"`);
+                if (doLink && !link) {
                     const bsExamples = Array.from(uniqueCategories.values())
                         .filter(c => c.report === 'Balance Sheet')
                         .map(c => `"${c.displayName}" (${c.accountType || 'no type'})`)
                         .slice(0, 5);
-                    console.log(`  > Link Failed: No category found with Report="Balance Sheet" matching "${targetType}".`);
+                    console.log(`  > Link Failed: No category found with Report="Balance Sheet" matching "${cType}".`);
                     if (bsExamples.length > 0) {
                         console.log(`  > Available BS accounts: ${bsExamples.join(', ')}${bsExamples.length === 5 ? '...' : ''}`);
                     } else {
@@ -636,21 +702,23 @@ Example:
             sheetConfigs.push({
                 name: confSheetName.toString().trim(),
                 shortName: (conf.shortName && conf.shortName.toString().trim()) || confSheetName.toString().trim(),
-                type: cType,
-                flip: isTruthy(confFlip),
+                type: cType, // 'income', 'expense', 'ledger'
+                flip: doFlip,
                 offset: parseInt(confOffset) || 0,
-                linkedAccount: link
+                startBalance: parseFloat(conf.startBalance) || 0,
+                endBalance: parseFloat(conf.endBalance) || 0,
+                linkedAccount: doLink ? link : null
             });
         }
     }
 
     if (showChecker) {
         console.log(`\n--- CONSUMED SHEETINFO TABLE ---`);
-        const header = `Sheet Name`.padEnd(30) + `Type`.padEnd(15) + `Linked Account`.padEnd(30) + `Flip`.padEnd(10) + `Offset`;
+        const header = `Sheet Name`.padEnd(30) + `Type`.padEnd(10) + `Linked Account`.padEnd(30) + `Flip`.padEnd(6) + `Offset`.padEnd(8) + `Start`.padStart(12) + `End`.padStart(12);
         console.log(header);
-        console.log("-".repeat(header.length));
+        console.log("-".repeat(header.length + 5));
         sheetConfigs.forEach(s => {
-            console.log(`${s.name.padEnd(30)}${s.type.padEnd(15)}${(s.linkedAccount || 'NONE').padEnd(30)}${(s.flip ? 'YES' : 'NO').padEnd(10)}${s.offset}`);
+            console.log(`${s.name.padEnd(30)}${s.type.padEnd(10)}${(s.linkedAccount || 'NONE').padEnd(30)}${(s.flip ? 'YES' : 'NO').padEnd(6)}${s.offset.toString().padEnd(8)}${(s.startBalance ? s.startBalance.toFixed(2) : '0.00').padStart(12)}${(s.endBalance ? s.endBalance.toFixed(2) : '0.00').padStart(12)}`);
         });
         console.log("");
     }
@@ -754,7 +822,7 @@ Example:
         }
 
         // --- Skip Ledger in main loop (handled separately in Step 3) ---
-        if (config.name.toLowerCase() === 'ledger' || config.type.toLowerCase() === 'ledger') {
+        if (config.name.toLowerCase() === 'ledger' || config.name.toLowerCase() === 'general ledger' || config.type.toLowerCase() === 'ledger') {
             continue;
         }
 
@@ -948,6 +1016,9 @@ Example:
                 sheetTotal += amount;
                 if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
 
+                // Track global processed total for this sheet
+                processedSheetTotals[config.name] = (processedSheetTotals[config.name] || 0) + amount;
+
                 if (!categoryVal && Math.abs(amount) > 0.01) {
                     if (pType === 'cc') uncategorizedCC++; else uncategorizedBank++;
                     uncategorizedDetails.push({ sheet: config.shortName, row: r, date: displayDate, desc: rawDesc });
@@ -1135,6 +1206,26 @@ Example:
 
         console.log(`[Sheet Stats] "${config.shortName}": Processed ${processedRows} rows. Total Change: ${sheetTotal.toFixed(2)}`);
 
+        // Check End Balance if configured
+        if (config.endBalance && Math.abs(config.endBalance) > 0.001) {
+            // For Expense sheets (Credit Cards), the 'sheetTotal' is positive (Expenses).
+            // But for the Account Balance, spending should be negative (increasing liability/reducing cash).
+            // So we invert the change for the validation math if it's an Expense sheet.
+            const validationChange = (config.type.toLowerCase() === 'expense') ? -sheetTotal : sheetTotal;
+
+            const calculatedEnd = (config.startBalance || 0) + validationChange;
+            const diff = Math.abs(calculatedEnd - config.endBalance);
+            walletCheckResults.push({
+                sheet: config.shortName,
+                start: config.startBalance || 0,
+                change: validationChange,
+                calcEnd: calculatedEnd,
+                expected: config.endBalance,
+                diff: diff,
+                passed: diff < 0.01
+            });
+        }
+
         if (config.linkedAccount) {
             const linkName = config.linkedAccount;
             const lConf = uniqueCategories.get(linkName.toLowerCase());
@@ -1156,6 +1247,12 @@ Example:
                 catStats[linkName].total -= sheetTotal;
             }
 
+            // Apply Starting Balance (if any)
+            if (config.startBalance && Math.abs(config.startBalance) > 0.001) {
+                catStats[linkName].total += config.startBalance;
+                console.log(`[Linkage Logic] Applied Starting Balance (${config.startBalance.toFixed(2)}) to "${linkName}".`);
+            }
+
             // Track sheet-level contribution to BS account
             if (!catStats[linkName].sheets[config.name]) {
                 catStats[linkName].sheets[config.name] = { add: 0, sub: 0, total: 0 };
@@ -1172,15 +1269,14 @@ Example:
     }
 
     // --- 3. Process Ledger ---
-    // --- 3. Process Ledger ---
     // Find Ledger configuration from Setup
-    const ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'ledger');
+    const ledgerConfig = sheetConfigs.find(c => c.name.toLowerCase() === 'general ledger' || c.name.toLowerCase() === 'ledger');
 
     if (!ledgerConfig) {
         console.error(`\n[ERROR] Checker Failed: "Ledger" configuration not found in Setup > SheetInfo.`);
         console.error(`Your workbook contains a "Ledger" sheet, so you MUST define it in the SheetInfo table.`);
         console.error(`Please add a row to SheetInfo:`);
-        console.error(`   Sheet Name: Ledger`);
+        console.error(`   Sheet Name: General Ledger`);
         console.error(`   Type:       Ledger`);
         console.error(`   Flip:       No`);
         console.error(`   Offset:     3 (or your header row)`);
@@ -1222,6 +1318,7 @@ Example:
     }
 
     let ledgerTotal = 0;
+    let ledgerValidationTotal = 0; // Raw Dr - Cr, must be 0
     let ledgerRows = 0;
     ledgerSheet.eachRow((row, r) => {
         try {
@@ -1235,6 +1332,10 @@ Example:
 
             const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
             const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
+
+            // Accumulate validation total (Dr should equal Cr, so Dr - Cr should be 0 across all rows)
+            ledgerValidationTotal += (dr - cr);
+
             const vendorVal = ledgerMap.vendor ? getVal(row.getCell(ledgerMap.vendor)) : '';
             const customerVal = ledgerMap.customer ? getVal(row.getCell(ledgerMap.customer)) : '';
 
@@ -1264,6 +1365,7 @@ Example:
                 if (impact !== 0 || catStr) {
                     ledgerRows++;
                     ledgerTotal += impact;
+                    processedSheetTotals[ledgerConfig.name] = (processedSheetTotals[ledgerConfig.name] || 0) + impact;
                 }
 
                 if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {}, sheets: {} };
@@ -1780,25 +1882,51 @@ Example:
         }
     }
 
+    if (Math.abs(ledgerValidationTotal) > 0.01) {
+        console.warn(`\n[!] CRITICAL WARNING: Ledger does not sum to zero!`);
+        console.warn(`    Net Mismatch (Dr - Cr): ${ledgerValidationTotal.toFixed(2)}`);
+        console.warn(`    Double-entry accounting requires Debits to equal Credits. Please check your Ledger entries.`);
+    }
+
+    // --- Wallet Reconciliation Report ---
+    if (walletCheckResults.length > 0) {
+        console.log('\n--- WALLET RECONCILIATION ---');
+        console.log(`Sheet Name`.padEnd(25) + `Start`.padStart(12) + `Change`.padStart(12) + `Calc End`.padStart(12) + `Exp End`.padStart(12) + `Diff`.padStart(12));
+        console.log('-'.repeat(85));
+        walletCheckResults.forEach(w => {
+            const status = w.passed ? '' : ' [MISMATCH]';
+            console.log(
+                `${w.sheet.padEnd(25)}` +
+                `${w.start.toFixed(2).padStart(12)}` +
+                `${w.change.toFixed(2).padStart(12)}` +
+                `${w.calcEnd.toFixed(2).padStart(12)}` +
+                `${w.expected.toFixed(2).padStart(12)}` +
+                `${w.diff.toFixed(2).padStart(12)}` +
+                `${status}`
+            );
+        });
+    }
+
     // --- Global Integrity Check: Total Tie ---
     // The sum of all net flows across all transaction sheets (after polarity)
     // must equal (Net Income) + (Sum of Balance Sheet changes).
     let globalFlowTotal = 0;
     const sheetFlows = [];
     sheetConfigs.forEach(conf => {
-        // Find total for this sheet across all categories
-        let sheetSum = 0;
-        Object.keys(catStats).forEach(cat => {
-            if (catStats[cat].sheets && catStats[cat].sheets[conf.name]) {
-                sheetSum += catStats[cat].sheets[conf.name].total;
-            }
-        });
+        // Use the tracked processed total, not the re-summed category stats
+        const sheetSum = processedSheetTotals[conf.name] || 0;
+
         globalFlowTotal += sheetSum;
         sheetFlows.push({ name: conf.shortName, flow: sheetSum });
     });
 
-    // Net Income + Balance Sheet Changes
-    const bsChangeTotal = reports.bs.reduce((a, b) => a + b.value, 0);
+    // Net Income + Balance Sheet Changes (EXCLUDING Linked Accounts)
+    // We exclude linked accounts because they represent the "Source" (Global Flow), 
+    // while "Other BS" represents the "Destination" (e.g. Transfers, Loan Paydown).
+    // Formula: GlobalFlow (Source Delta) = NetIncome + OtherBS (Destination Delta)
+    const linkedNames = new Set(sheetConfigs.map(c => c.linkedAccount).filter(Boolean));
+    const otherBS = reports.bs.filter(r => !linkedNames.has(r.label));
+    const bsChangeTotal = otherBS.reduce((a, b) => a + b.value, 0);
     const accountingTotal = netIncome + bsChangeTotal;
 
     console.log('\n--- GLOBAL INTEGRITY CHECK ---');
