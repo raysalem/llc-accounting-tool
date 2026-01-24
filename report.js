@@ -5,7 +5,9 @@ const { execSync } = require('child_process');
 const util = require('util');
 
 // Store original console just in case
+// Store original console just in case
 const originalConsole = { log: console.log, warn: console.warn, error: console.error };
+const THRESHOLD_1099_NEC = 600;
 
 // --- Logger Buffer for "Notes" Tab ---
 global.globalWarningCount = 0;
