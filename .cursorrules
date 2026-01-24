@@ -1,123 +1,52 @@
-# LLC Accounting Tool - Project Rules
+# LLC Accounting Codebase Rules
 
-## 1. Technology Stack
-- **Runtime**: Node.js (Current LTS).
-- **Execution**: Windows PowerShell (Avoid `&&` chaining; use sequential calls).
-- **Excel Handling**: Use `exceljs` exclusively. Do not use `xlsx` or other libraries unless absolutely necessary.
-- **Style**: Standard JavaScript (ES6+), 4-space indentation.
+## 1. Project Context & Standards (Technical)
+*These rules govern the code, architecture, and technology of the repository.*
 
-## 2. Core Architectural Principles
-- **Dynamic Column Mapping**: 
-  - NEVER hardcode column headers to integer indices (e.g., `row.getCell(3)`).
-  - ALWAYS scan the header row (typically row 1 or determined by signature) to find columns by name (e.g., "Category", "Amount").
-  - Use flexible string matching (case-insensitive, trimmed).
-- **Safety First**:
-  - Scripts that modify data (`update_financials.js`) must default to **READ-ONLY** mode.
-  - Require a `--save` flag to write changes back to the Excel file.
-  - Require a `--checker` flag for deep data integrity scanning.
-- **Data Integrity**:
-  - When clearing data (e.g., in `load_transactions.js`), prefer the "Delete and Recreate Sheet" method to avoid lingering metadata or table corruption.
-  - Always validate Categories and Vendors against the "Setup" sheet.
+### 🛠 Technology Stack
+- **Language**: Node.js (LTS), ES6+ Standards.
+- **Dependencies**: `exceljs` ONLY for Excel operations. No `xlsx` or `csv-parser` unless explicitly authorized.
+- **Shell**: PowerShell (Windows). Use sequential commands (`cmd; cmd`), avoid complex chaining (`&&` or `||`).
 
-## 3. CLI User Experience
-- **Output formatting**: Use clear headers (e.g., `--- SECTION ---`) to organize console output.
-- **Feedback**: detailed logs should be printed when `--checker` is used, but standard output should be clean and summary-focused.
+### 🏗 Architecture
+- **Single Source of Truth**: The "Setup" sheet in `LLC_Accounting_Template.xlsx` configuration is immutable.
+- **Strict Headers**: Headers must be located on **Row 1**. Missing headers = Critical Error. Do not fuzzy-scan.
+- **Top-Level Constants**: All configuration thresholds (e.g., `THRESHOLD_1099_NEC`) must be defined as `const` at the file top-level.
 
-## 4. Testing & Maintenance
-- **Tests**: Every major feature or flag must have a corresponding test script in the `tests/` directory.
-- **Documentation**: Keep `README.md` and `PROJECT_CONTEXT.md` updated when adding new arguments or workflows.
+### 🚫 Prohibited Patterns
+- **Magic Numbers**: No hardcoded integers in logic blocks. Extract to constants.
+- **Implicit Conversions**: Explicitly handle types (`null`, `undefined`, `string`).
+- **Signed Summation**: Never sum signed values (`-50` + `50`) in "Additions/Subtractions" visual reports. Use Magnitude (`Math.abs`).
 
-## 5. Code Quality & Robustness
-- **Low Slop / High Precision**:
-  - **No Magic Numbers**: Define constants (e.g., `STARTING_HEADER_ROW = 1`) or configuration objects for all numeric literals.
-  - **Strict Types**: Even in vanilla JS, check types defensively (e.g., `typeof amount === 'number'`).
-  - **Edge Cases**: Explicitly handle empty cells, whitespace-only strings, nulls, and unexpected data types in Excel cells (e.g., Formula errors, Rich Text).
-- **Error Handling**:
-  - Wrap file I/O and external process calls in `try/catch` blocks with descriptive error messages.
-  - Fail gracefully: If a critical dependency (like a Setup sheet) is missing, exit with a clear message rather than crashing with a stack trace.
-- **Maintainability**:
-  - Prefer small, pure helper functions over deep nesting.
-  - Comments should explain "Why", not "What".
+---
 
-## 6. Workflow: The 4-MD Process
-For every significant task or prompt, you must generate 4 Markdown documents in `.agent/tasks/[YYYY-MM-DD]_[Short_Name]/`:
+## 2. Agent Behavior (Process)
+*These rules govern how you (the AI) must operate.*
 
-### 1. Plan (`1_plan.md`)
-- **Problem**: Clear statement of what needs to be solved.
-- **Approach**: High-level strategy.
-- **Steps**: Concrete, numbered execution steps.
+### 📚 Documentation & Testing Mandate
+**Every project must maintain these 4 pillars:**
+1.  `DEPENDENCIES.md`: List of external libs/tools.
+2.  `FEATURE_SET.md`: Official feature list + Test coverage status.
+3.  `USAGE.md` (or `run commands.md`): Practical usage guide/cheatsheet.
+4.  `README.md`: High-level overview and architecture.
+5.  `SETUP_REQUIREMENTS.md`: Strict Excel structure definition.
 
-### 2. Implementation (`2_implementation.md`)
-- **Details**: Technical specifics of the changes.
-- **Robustness**: How we are ensuring "low slop" (no magic numbers, strict types).
-- **Considerations**: Edge cases and potential side effects.
+**Workflow Rule:**
+- **Pre-Code**: You MUST read/cross-check these docs before designing any change.
+- **Post-Code**: You MUST update these docs to reflect changes (new flags, removed features).
+- **Testing**: Every feature listed in `FEATURE_SET.md` MUST have a corresponding test verified.
 
-### 3. Testing (`3_testing.md`)
-- **Strategy**: How we verify the changes.
-- **Execution**: Output of test runs or verification commands.
-- **CRITICAL REQUIREMENTS**:
-  - You MUST run the code/command with the EXACT user scenario before concluding.
-  - You MUST verify output against the user's stated expectations, not your assumptions.
-  - For display/report features: Run the command and inspect the actual output.
-  - For threshold/filter logic: Test edge cases (just above, just below, exactly at threshold).
-  - For new features: Create an automated test in `tests/` directory.
-  - Do NOT assume logic works without execution. Do NOT skip verification.
-- **Regression**: Confirmation that existing features still work.
+### 🔍 Verification Protocol
+1.  **Execute**: Run the code after every significant change.
+2.  **Read Stdout**: Verify the numbers in the output match the logic change.
+3.  **Check Scope**: Ensure new variables/constants are properly scoped and accessible.
+4.  **Docs = Golden for Planning**: Treat `SETUP_REQUIREMENTS.md` and `FEATURE_SET.md` as the authoritative source for planning. You should not need to read `report.js` to understand the *intent* or *features*, only implementation details.
+5.  **Sync Requirement**: If you change code logic, you **MUST** update the Docs to match. The Docs must never drift from the Code.
 
-### 4. Reflection (`4_reflection.md`)
-- **Review**: Did we solve the prompt?
-- **Quality**: Self-assessment of code quality and robustness.
-- **Rules Check**: Did I follow all predicate/rules accordingly? Were there conflicts in precedence? Are there any grey areas the user should be aware of?
-- **Next**: Operations or cleanup required.
+### 🛡 QA & Regression
+- **Feature Set**: Consult `FEATURE_SET.md` before changes. Update it after changes.
+- **Test Suite**: Run `tests/run_integration_test.js` if modifying core logic.
+- **Lockfiles**: If `package.json` changes, run `npm install` immediately.
 
-## 7. Documentation & Impact
-- **Mandatory Review**: Before making changes, you MUST review `PROJECT_CONTEXT.md` and `README.md` to understand the system and assess impact.
-- **Update Cycle**: If logic changes (e.g. Polarity, Flag Names), you MUST update these documents immediately. Do not leave documentation drift.
-- **Integration**: Do not make changes in isolation. Explicitly check for collisions with existing logic (e.g. Ledger vs Transaction Loops).
-
-## 8. Lessons Learned: Anti-Slop Rules
-**These rules exist because we made these mistakes. Do not repeat them.**
-
-### Testing Failures
-1. **"Required" Column (2026-01-19)**: Implemented display logic without testing actual output. Showed "YES" for vendors under threshold.
-   - **Rule**: ALWAYS run `--vendor` report and inspect actual output when changing display logic.
-   - **Rule**: Test edge cases: vendors just above threshold, just below threshold, exactly at threshold.
-
-2. **Polarity Logic (2026-01-19)**: Changed polarity calculation without verifying with user's actual data file.
-   - **Rule**: When user provides a test file path, ALWAYS run against that file before concluding.
-   - **Rule**: If user says "this is wrong", they have SEEN the output. Trust their observation.
-
-3. **Map Storage (2026-01-19)**: Changed internal data structure (String → Object) without updating ALL consumer code.
-   - **Rule**: When changing a shared data structure, grep for ALL usages and update them.
-   - **Rule**: Run integration tests after structural changes.
-
-4. **Incomplete Feature Application (2026-01-20)**: Added vendor/customer report tracking to Bank/CC loops but missed Ledger loop.
-   - **Pattern**: This happened TWICE (subcategory validation had same issue).
-   - **Rule**: When adding transaction processing features, GREP for all similar code locations: `grep -n "vendorStats\|customerStats" report.js`
-   - **Rule**: Explicitly verify feature applies to: Bank, CC, AND Ledger transaction loops.
-   - **Rule**: Add to reflection checklist: "Did I check ALL transaction processing loops (Bank, CC, Ledger)?"
-
-### Implementation Patterns
-1. **Display vs Storage**: Separate what you STORE (configuration) from what you DISPLAY (business rules applied).
-2. **Threshold Checks**: Always check thresholds at display/output time, not just at storage time.
-3. **Legacy Support**: When supporting legacy columns, explicitly set ALL fields that new columns would provide.
-4. **Setup Sheet is Source of Truth**: The Setup sheet configuration is authoritative. NEVER circumvent it with "fuzzy logic" or auto-detection unless explicitly designed for that purpose. If Setup specifies a header row and headers aren't found there, ERROR and STOP - don't silently continue or search elsewhere.
-5. **Ledger Polarity & Usage**:
-   - The Ledger follows strict double-entry accounting principles:
-     - **Assets**: Debit increases (entered in Debit col), Credit decreases.
-     - **Liabilities/Equity**: Credit increases (entered in Credit col), Debit decreases.
-     - **Expenses**: Debit increases, Credit decreases.
-     - **Income**: Credit increases, Debit decreases.
-   - **Internal Storage**: The application internally stores Debits as negative and Credits as positive (`Credit - Debit`).
-   - **Display Logic**: Assets are explicitly flipped (`* -1`) during Balance Sheet generation to display as positive numbers.
-   - **Double-Entry Requirement**: Every Ledger transaction should have balancing entries (e.g., specific Asset Debit balanced by Equity Credit).
-6. **Clean Up Before Commit**: ALWAYS delete temporary diagnostic scripts, debug output files, and unused code artifacts before making a commit. Ensure the repo is clean.
-
-### Before Concluding ANY Task
-- [ ] Did I run the exact command the user would run?
-- [ ] Did I inspect the actual output (not just "it didn't crash")?
-- [ ] Did I test with the user's data file if they provided one?
-- [ ] Did I test edge cases for any threshold/filter logic?
-- [ ] Did I create an automated test for new features?
-- [ ] Did I run the integration test suite?
-- [ ] **If modifying transaction processing**: Did I verify the change applies to Bank, CC, AND Ledger loops?
+### 🧠 Post-Task Reflection
+- If a bug occurs, identified root cause must be codified into "Prohibited Patterns" above, not just fixed in code.
