@@ -149,7 +149,7 @@ Example:
 
     // Resolve shortcut if needed
     if (fs.existsSync(filename)) {
-        if (showDebug) console.log(`LLC Accounting Tool v${require('./package.json').version}`);
+        console.log(`LLC Accounting Tool v2.1.0`);
         const resolved = resolveShortcut(filename);
         if (resolved !== filename) {
             if (showDebug) console.log(`Resolved shortcut '${filename}' -> '${resolved}'`);
