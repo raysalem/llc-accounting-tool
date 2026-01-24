@@ -1000,6 +1000,7 @@ Example:
         return headerList.some(h => v === h || v.includes(h)); // Relaxed matching
     }
 
+    const sheetTotalMap = new Map();
     for (const config of sheetConfigs) {
         let sheetTotal = 0;
         let sheetAdds = 0;
@@ -1408,26 +1409,9 @@ Example:
         });
 
         if (showDebug) console.log(`[Sheet Stats] "${config.shortName}": Processed ${processedRows} rows. Total Change: ${sheetTotal.toFixed(2)}`);
+        sheetTotalMap.set(config.name, sheetTotal);
 
-        // Check End Balance if configured (strict check against null)
-        if (config.endBalance !== null) {
-            // For Expense sheets (Credit Cards), the 'sheetTotal' is positive (Expenses).
-            // But for the Account Balance, spending should be negative (increasing liability/reducing cash).
-            // So we invert the change for the validation math if it's an Expense sheet.
-            const validationChange = (config.type.toLowerCase() === 'expense') ? -sheetTotal : sheetTotal;
 
-            const calculatedEnd = (config.startBalance || 0) + validationChange;
-            const diff = Math.abs(calculatedEnd - config.endBalance);
-            walletCheckResults.push({
-                sheet: config.shortName,
-                start: config.startBalance || 0,
-                change: validationChange,
-                calcEnd: calculatedEnd,
-                expected: config.endBalance,
-                diff: diff,
-                passed: diff < 0.01
-            });
-        }
 
         // JIT Linkage Fallback: If no linked account from Step 1, try again using raw cat column
         // This catches cases where categories might have fully loaded or matched differently
@@ -1470,15 +1454,76 @@ Example:
                 catStats[linkName].sheets[config.name] = { add: 0, sub: 0, total: 0 };
             }
             const sStat = catStats[linkName].sheets[config.name];
-            sStat.add += sheetAdds;
-            sStat.sub += sheetSubs;
-            sStat.total += (isAsset ? sheetTotal : -sheetTotal);
+            const sourceIsLiability = config.type.toLowerCase().includes('expense') || config.type.toLowerCase().includes('cc');
+
+            if (isAsset) {
+                // Asset Target: Direct Mapping (Inflow=Add, Outflow=Sub)
+                sStat.total += sheetTotal;
+                sStat.add += sheetAdds;
+                sStat.sub += sheetSubs;
+            } else {
+                // Liability Target (Positive Balance = Debt)
+                if (sourceIsLiability) {
+                    // Source is the Liability itself (CC Sheet)
+                    // Expense (Negative Outflow) -> Increases Debt (Add)
+                    // Payment (Positive Inflow) -> Decreases Debt (Sub)
+                    sStat.total -= sheetTotal; // Invert to make Exp positive
+                    sStat.add += (-sheetSubs); // Map Negs to Add
+                    sStat.sub += sheetAdds;    // Map Pos to Sub
+                } else {
+                    // Source is External Asset (Bank Sheet) paying the Liability
+                    // Payment (Negative Outflow) -> Decreases Debt (Sub)
+                    // Refund (Positive Inflow) -> Increases Debt (Add)? (Rare, but logical)
+                    sStat.total += sheetTotal; // Direct (Neg reduces Debt)
+                    sStat.add += sheetAdds;    // Pos adds to Debt
+                    sStat.sub += sheetSubs;    // Neg subtracts from Debt
+                }
+            }
 
             console.log(`${linkageMsg} Balance: ${previous.toFixed(2)} -> ${catStats[linkName].total.toFixed(2)}`);
         } else if (config.type !== 'ledger') {
             // Only warn if it's not a Ledger (Ledgers are manual)
             if (showDebug) console.log(`[Linkage Logic] Sheet "${config.name}" (Type: ${config.type}) has NO LINKED ACCOUNT. Total (${sheetTotal.toFixed(2)}) NOT applied to any Balance Sheet asset.`);
         }
+
+        // Check End Balance if configured (strict check against null)
+        // Moved here to ensure 'effectiveLink' and 'catStats' are fully computed
+        // if (config.endBalance !== null) {
+        // Use the "Global" Ledger-adjusted balance for this account if linked
+        let calculatedEnd = 0;
+        let usedGlobal = false;
+
+        if (effectiveLink && catStats[effectiveLink]) {
+            // If linked, use the total accounting balance (includes Ledger + Sheet + Start)
+            // Note: Assets are Positive, Liabilities are Negative in catStats.total logic?
+            // Actually in catStats, Liability Balances are currently calculated as Positive numbers 
+            // (Expenses=Increase, Payments=Decrease).
+            calculatedEnd = catStats[effectiveLink].total;
+            usedGlobal = true;
+        } else {
+
+            // Fallback to sheet-only calculation (Start + Change)
+            // For Expense sheets, validationChange should be Positive (Increase) to match Ending Balance magnitude.
+            const sheetChangeVal = (config.type.toLowerCase() === 'expense') ? -sheetTotal : sheetTotal;
+            calculatedEnd = (config.startBalance || 0) + sheetChangeVal;
+        }
+
+        // Determine "Sheet Change" (The part coming from THIS sheet)
+        // For Expense sheets, internal SheetTotal is Positive (Expenses). We invert it to match Balance Impact (Negative).
+        // This is used for REPORTING display, and differentiating Ledger impact.
+        const sheetChangeVal = (config.type.toLowerCase() === 'expense') ? -sheetTotal : sheetTotal;
+
+        let finalCalcEnd = calculatedEnd; // Use the one determined above (Global or Fallback)
+        let ledgerAdj = 0;
+
+        if (usedGlobal) {
+            // catStats.total includes: Start + SheetChange + Ledger
+            // So Ledger = Total - Start - SheetChange
+            ledgerAdj = finalCalcEnd - (config.startBalance || 0) - sheetChangeVal;
+        }
+
+        const diff = Math.abs(finalCalcEnd - config.endBalance);
+
     }
 
     // --- 3. Process Ledger ---
@@ -1760,6 +1805,50 @@ Example:
         console.error(`Please fix the Ledger sheet and try again.`);
         process.exit(1);
     }
+
+    // --- 3b. Post-Ledger Wallet Validation ---
+    // Now that Ledger entries are integrated into 'catStats', we can accurately check Wallet Balances.
+    sheetConfigs.forEach(config => {
+        if (config.endBalance !== null) {
+            // Determine "Sheet Change" (Pure Sheet Impact)
+            // Assets: SheetTotal (Pos=Inc, Neg=Dec). Liabilities: -SheetTotal (Exp=Inc, Pay=Dec).
+            // Actually, sheetTotal is Signed (Inc/Exp).
+            // For Liability sheets (Flip=True), Expenses are Negative. We want Positive Increase.
+            const sheetChangeVal = (config.type.toLowerCase() === 'expense') ? -sheetTotalMap.get(config.name) : sheetTotalMap.get(config.name);
+
+            // Re-resolve Linkage (same logic as before, but relying on final state)
+            let effectiveLink = config.linkedAccount;
+            if (!effectiveLink && config.cat && config.type !== 'ledger') {
+                const jitMatch = uniqueCategories.get(config.cat.toLowerCase());
+                if (jitMatch) effectiveLink = jitMatch.displayName;
+            }
+
+            let finalCalcEnd = 0;
+            let ledgerAdj = 0;
+            let usedGlobal = false;
+
+            if (effectiveLink && catStats[effectiveLink]) {
+                finalCalcEnd = catStats[effectiveLink].total;
+                usedGlobal = true;
+                ledgerAdj = finalCalcEnd - (config.startBalance || 0) - sheetChangeVal;
+            } else {
+                finalCalcEnd = (config.startBalance || 0) + sheetChangeVal;
+                ledgerAdj = 0;
+            }
+
+            const diff = Math.abs(finalCalcEnd - config.endBalance);
+            walletCheckResults.push({
+                sheet: config.shortName,
+                start: config.startBalance || 0,
+                change: sheetChangeVal,
+                ledgerPart: ledgerAdj,
+                calcEnd: finalCalcEnd,
+                expected: config.endBalance,
+                diff: diff,
+                passed: diff < 0.01
+            });
+        }
+    });
 
     // --- 4. Prepare Reports ---
     const reports = { pl: [], bs: [] };
@@ -2333,15 +2422,16 @@ Example:
     // --- Wallet Reconciliation Report ---
     if (walletCheckResults.length > 0) {
         console.log('\n--- WALLET RECONCILIATION ---');
-        console.log(`Sheet Name`.padEnd(25) + `Start`.padStart(12) + `Change`.padStart(12) + `Calc End`.padStart(12) + `Exp End`.padStart(12) + `Diff`.padStart(12));
-        console.log('-'.repeat(85));
+        console.log(`Sheet Name`.padEnd(25) + `Start`.padStart(12) + `Sheet Change`.padStart(15) + `Ledger Adj`.padStart(12) + `Calc End`.padStart(12) + `Exp End`.padStart(12) + `Diff`.padStart(12));
+        console.log('-'.repeat(100));
         walletCheckResults.forEach(w => {
             if (!w.passed) hasErrors = true;
             const status = w.passed ? '' : ' [MISMATCH]';
             console.log(
                 `${w.sheet.padEnd(25)}` +
                 `${w.start.toFixed(2).padStart(12)}` +
-                `${w.change.toFixed(2).padStart(12)}` +
+                `${w.change.toFixed(2).padStart(15)}` +
+                `${(w.ledgerPart || 0).toFixed(2).padStart(12)}` +
                 `${w.calcEnd.toFixed(2).padStart(12)}` +
                 `${w.expected.toFixed(2).padStart(12)}` +
                 `${w.diff.toFixed(2).padStart(12)}` +
