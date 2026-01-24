@@ -2059,7 +2059,7 @@ Example:
             let rowAddTotal = 0;
             sheetList.forEach(s => {
                 const val = (sheets[s] ? sheets[s].add : 0) || 0;
-                rowAddTotal += val;
+                rowAddTotal += Math.abs(val);
                 // Use absolute for display in additions column
                 const disp = Math.abs(val);
                 line += disp === 0 ? " ".padStart(COL_WIDTH) : disp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH);
@@ -2070,7 +2070,7 @@ Example:
             let rowSubTotal = 0;
             sheetList.forEach(s => {
                 const val = (sheets[s] ? sheets[s].sub : 0) || 0;
-                rowSubTotal += val;
+                rowSubTotal += Math.abs(val);
                 // Use absolute for display in subtractions column
                 const disp = Math.abs(val);
                 line += disp === 0 ? " ".padStart(COL_WIDTH) : disp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH);
@@ -2248,9 +2248,9 @@ Example:
 
         // Generate 1099 List if any data found
         const all1099 = [];
-        if (activeNEC) all1099.push(...(reports.vendors1099NEC || []).map(x => ({ ...x, form: 'NEC', threshold: 600 })));
+        if (activeNEC) all1099.push(...(reports.vendors1099NEC || []).map(x => ({ ...x, form: 'NEC', threshold: THRESHOLD_1099_NEC })));
         if (activeINT) all1099.push(...(reports.vendors1099INT || []).map(x => ({ ...x, form: 'INT', threshold: 0 })));
-        if (activeNEC || show1099All) all1099.push(...(reports.vendors1099MISC || []).map(x => ({ ...x, form: 'MISC', threshold: 600 })));
+        if (activeNEC || show1099All) all1099.push(...(reports.vendors1099MISC || []).map(x => ({ ...x, form: 'MISC', threshold: THRESHOLD_1099_NEC })));
 
         // Filter by threshold & polarity
         const csvRows = [];
@@ -2785,7 +2785,9 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
                             r.font = { italic: true };
                         });
                     }
+
                 });
+
                 // Calculate Total Row
                 const totalRow = [`TOTAL ${title}`, items.reduce((sum, r) => sum + (r.opening || 0), 0), items.reduce((sum, r) => sum + r.value, 0)];
                 sortedSheets.forEach(s => {
@@ -2801,6 +2803,7 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
                 const tRowLabel = wsSub.addRow(totalRow);
                 tRowLabel.font = { bold: true };
                 wsSub.addRow([]);
+
             };
             addBSSubGroup('ASSETS', reports.assets);
             addBSSubGroup('LIABILITIES', reports.liabilities);
