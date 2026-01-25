@@ -12,8 +12,8 @@ This document defines the official feature set of the functionality. Every featu
 | Flag | Description | Test Coverage |
 | :--- | :--- | :--- |
 | `--help` | Displays usage instructions and exits. | ✅ `manual` |
-| `--save` | Writes changes (Summary tab, formatting) back to the Excel file. | ✅ `test_comprehensive_report.js` |
-| `--checker` | Runs data integrity checks (missing categories, illegal vendors). | ✅ `test_comprehensive_report.js` |
+| `--save` | Writes changes to Excel and generates a **PDF Report**. Increments Version. Adds `Report Info` tab. | ✅ `test_comprehensive_report.js` |
+| `--checker` | Runs data integrity checks (missing categories, illegal vendors, negative assets). | ✅ `test_comprehensive_report.js` |
 | `--debug` | Prints verbose log output for troubleshooting. | ✅ `manual` |
 | `--pl` | Prints summary Profit & Loss report. | ✅ `test_comprehensive_report.js` |
 | `--bs` | Prints summary Balance Sheet report. | ✅ `test_comprehensive_report.js` |
@@ -45,6 +45,9 @@ This document defines the official feature set of the functionality. Every featu
   - `P&L` categories MUST be Type `Income` or `Expense`.
   - `Balance Sheet` categories MUST be Type `Asset`, `Liability`, or `Equity`.
   - Violations trigger a `[!] CRITICAL CONFIG ERROR`.
+- **Asset Polarity**:
+  - **Linked Assets** (Bank Sheets): Natural Polarity (Start + Transactions).
+  - **Unlinked Assets** (Purchases/Investments): Inverted Polarity (Spending [Neg] = Value Increase [Pos]).
 
 ## 4. Test Gaps Checklist
 - [ ] Create test for `--bs-sub` output format (verifying Positive Magnitude logic).
