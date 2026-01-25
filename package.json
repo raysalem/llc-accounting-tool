@@ -5,6 +5,7 @@
     "main": "generate_excel.js",
     "dependencies": {
         "exceljs": "^4.4.0",
-        "glob": "^13.0.0"
+        "glob": "^13.0.0",
+        "pdfkit": "^0.17.2"
     }
 }

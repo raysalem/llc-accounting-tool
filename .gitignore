@@ -9,3 +9,4 @@ run commands.md
 *.txt
 report_*
 !tests/*.txt
+tests/debug_*.txt

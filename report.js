@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const util = require('util');
+let PDFDocument;
+try { PDFDocument = require('pdfkit'); } catch (e) { /* ignore if missing */ }
 
 // Store original console just in case
 // Store original console just in case
@@ -1976,14 +1978,40 @@ Example:
         const conf = uniqueCategories.get(item.label.toLowerCase());
         const t = (conf && conf.accountType) ? conf.accountType.toString().toLowerCase() : '';
 
+        // Determine if this Category is linked to a Sheet (Source Account)
+        const isLinked = sheetConfigs.some(s => s.linkedAccount && s.linkedAccount.toLowerCase() === item.label.toLowerCase());
+
         if (t.includes('asset') || t.includes('bank') || t.includes('cash') || t.includes('receivable')) {
+            // FIX: Polarity for Destination Assets (Purchased via Spending)
+            // If an Asset is NOT a Source Sheet (Linked), it is likely an Accumulator (e.g. Equipment, Investment).
+            // Spending (Negative Flow) should INCREASE its value.
+            if (!isLinked) {
+                // Invert Polarity
+                item.value = item.value * -1;
+                item.opening = item.opening * -1;
+                // Add/Sub should swap (Spending was Sub, now is Add) - But effectively we just swap values
+                const oldAdd = item.add;
+                const oldSub = item.sub;
+                item.add = oldSub;
+                item.sub = oldAdd;
+            }
             assets.push(item);
         } else if (t.includes('liability') || t.includes('credit') || t.includes('cc') || t.includes('payable') || t.includes('loan') || t.includes('debt')) {
             liabilities.push(item);
         } else if (t.includes('equity') || t.includes('capital') || t.includes('contribution') || t.includes('distribution') || t.includes('earning')) {
             equity.push(item);
         } else {
-            // Fallback for Balance Sheet items without explicit sub-type
+            // Fallback: Default to Asset (and apply same logic if not linked?)
+            // Safer to just push as is, or apply inversion if it looks like an asset?
+            // Let's assume fallback is Asset, so apply logic.
+            if (!isLinked) {
+                item.value = item.value * -1;
+                item.opening = item.opening * -1;
+                const oldAdd = item.add;
+                const oldSub = item.sub;
+                item.add = oldSub;
+                item.sub = oldAdd;
+            }
             assets.push(item);
         }
     });
@@ -2002,6 +2030,14 @@ Example:
     reports.liabilities = liabilities;
     reports.equity = equity;
     reports.bs = [...assets, ...liabilities, ...equity];
+
+    // CHECK: Assets should never be negative
+    assets.forEach(a => {
+        if (a.value < -0.01) {
+            console.warn(`\n[!] CRITICAL WARNING: Asset "${a.label}" is NEGATIVE (${a.value.toFixed(2)}). Assets should generally be positive.`);
+            global.globalWarningCount = (global.globalWarningCount || 0) + 1;
+        }
+    });
 
     // Prepare Vendor / Customer Reports
     reports.vendors1099NEC = Object.keys(vendor1099Stats.NEC || {}).map(v => ({ label: v, value: vendor1099Stats.NEC[v] })).sort((a, b) => b.value - a.value);
@@ -2415,12 +2451,20 @@ Example:
         if (showCustomerSub) {
             printDetailedTable('CUSTOMER INCOME (Detailed)', reports.customers, reportSheetList, sheetNameMap, "Customer");
         } else {
-            // Already shown in main "Vendor Spending" block if showVendor is on, 
-            // but if showVendorSub is ON and showVendor is OFF (edge case), we show detailed.
-            // If both, we might duplicate? 
-            // The main vendor block shows 1099 info. This shows stats.
-            // Let's assume if showVendor is on, we don't need this basic block unless sub is requested.
-            // But the original code printed it.
+            // Standard Customer Summary
+            console.log(`\n--- CUSTOMER INCOME ---`);
+            if (reports.customers.length === 0) console.log('(No Data)');
+            else {
+                const h = `Customer`.padEnd(30) + `Total`.padStart(15);
+                console.log(h);
+                console.log('-'.repeat(h.length));
+                reports.customers.forEach(r => {
+                    console.log(
+                        `${r.label.substring(0, 29).padEnd(30)}` +
+                        `${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(15)}`
+                    );
+                });
+            }
         }
     }
 
@@ -2979,8 +3023,123 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     logWs.getColumn(1).width = 120;
     logs.forEach(l => logWs.addRow([l.replace(/\x1b\[[0-9;]*m/g, '')]));
 
+    // Incremented Version Logic
+    const newVersion = incrementPackageVersion();
+
+    // Metadata Sheet
+    addMetadataSheet(wb, newVersion, filename, process.argv.slice(2).join(' '));
+
     await wb.xlsx.writeFile(newFilename);
     originalConsole.log(`[Saved] Report saved to: ${newFilename}`);
+    originalConsole.log(`[Version] Updated to ${newVersion}`);
+
+    // PDF Generation
+    if (PDFDocument) {
+        const pdfName = newFilename.replace(path.extname(newFilename), '.pdf');
+        await generatePDF(pdfName, reports, newVersion, filename);
+    }
+
+}
+
+function incrementPackageVersion() {
+    try {
+        const pkgPath = path.join(__dirname, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const parts = (pkg.version || '1.0.0').split('.').map(Number);
+            parts[2] = (parts[2] || 0) + 1; // Increment patch
+            const newVer = parts.join('.');
+            pkg.version = newVer;
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 4));
+            return newVer;
+        }
+    } catch (e) {
+        /* ignore */
+    }
+    return 'Unknown';
+}
+
+function addMetadataSheet(wb, version, filename, command) {
+    let ws = wb.getWorksheet('Report Info');
+    if (ws) {
+        wb.removeWorksheet(ws.id); // ExcelJS remove by ID
+    }
+    ws = wb.addWorksheet('Report Info');
+
+    ws.columns = [{ header: 'Property', width: 25 }, { header: 'Value', width: 80 }];
+    ws.addRow(['Report Version', version]);
+    ws.addRow(['Generated Date', new Date().toLocaleString()]);
+    try {
+        ws.addRow(['Accounting File Last Save', fs.statSync(filename).mtime.toLocaleString()]);
+    } catch (e) { ws.addRow(['Accounting File Last Save', 'Unknown']); }
+    ws.addRow(['Command Used', command]);
+}
+
+async function generatePDF(pdfPath, reports, version, xlsxFile) {
+    return new Promise((resolve, reject) => {
+        try {
+            const doc = new PDFDocument({ margin: 50 });
+            const stream = fs.createWriteStream(pdfPath);
+            doc.pipe(stream);
+
+            doc.fontSize(24).text('Financial Report', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(14).text(`Version: ${version}`, { align: 'center' });
+            doc.text(`Date: ${new Date().toLocaleString()}`, { align: 'center' });
+            doc.text(`Source: ${path.basename(xlsxFile)}`, { align: 'center' });
+            doc.moveDown(2);
+
+            // Helper to print table
+            const printTable = (title, rows, extractFunc) => {
+                doc.addPage();
+                doc.fontSize(18).text(title, { underline: true });
+                doc.moveDown();
+                doc.fontSize(10).font('Courier'); // Monospace for alignment
+
+                if (!rows || rows.length === 0) {
+                    doc.text('(No Data)');
+                    return;
+                }
+
+                rows.forEach(row => {
+                    const line = extractFunc(row);
+                    doc.text(line);
+                });
+                doc.font('Helvetica');
+            };
+
+            // P&L
+            if (reports.pl) {
+                printTable('Profit & Loss Summary', reports.pl, r => `${r.label.padEnd(50)} ${r.value.toFixed(2).padStart(15)}`);
+            }
+
+            // BS
+            if (reports.bs) {
+                printTable('Balance Sheet Summary', reports.bs, r => `${r.label.padEnd(50)} ${r.value.toFixed(2).padStart(15)}`);
+            }
+
+            // Vendor Summary
+            if (reports.vendors) {
+                printTable('Vendor Spending', reports.vendors, r => `${r.label.substring(0, 45).padEnd(50)} ${r.value.toFixed(2).padStart(15)}`);
+            }
+
+            // Customer Summary
+            if (reports.customers) {
+                printTable('Customer Income', reports.customers, r => `${r.label.substring(0, 45).padEnd(50)} ${r.value.toFixed(2).padStart(15)}`);
+            }
+
+            doc.end();
+            stream.on('finish', () => {
+                originalConsole.log(`[PDF] Saved to: ${pdfPath}`);
+                resolve();
+            });
+            stream.on('error', reject);
+
+        } catch (e) {
+            originalConsole.error('PDF Generation Failed:', e.message);
+            resolve(); // Don't crash main process
+        }
+    });
 }
 
 updateFinancials().catch(e => {
