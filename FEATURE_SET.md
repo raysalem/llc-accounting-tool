@@ -23,7 +23,8 @@ This document defines the official feature set of the functionality. Every featu
 | `--vendor-sub` | Prints detailed vendor spending with breakdown. | ⚠️ **Needs Test** |
 | `--customer` | Prints customer income summary. | ✅ `test_comprehensive_report.js` |
 | `--customer-sub` | Prints detailed customer income with breakdown. | ⚠️ **Needs Test** |
-| `--1099` | Generates 1099-NEC and 1099-INT reports based on Vendor configuration. | ✅ `test_1099_threshold.js` |
+| `--1099` | Generates 1099-NEC and 1099-INT reports. Checks Payer Info. Export CSV/XLSX: `R` (Recipient) First, then `P` (Payer). | ✅ `test_1099_payer_columns.js` |
+| **Batch Processing** | `batch_run.js` acts as a **Proxy Wrapper**. It iterates files matches and executes `report.js`. It inherits all output logic (including 1099 formatting) from the core report tool. | ✅ `Manual Verification` |
 | `--1099=NEC` | Generates only 1099-NEC reports. | ✅ `test_1099_threshold.js` |
 | `--1099=INT` | Generates only 1099-INT reports. | ✅ `test_1099_threshold.js` |
 | `--details "Cat"`| Prints transaction-level details for a specific category. | ✅ `test_details_flag.js` |

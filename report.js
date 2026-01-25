@@ -66,17 +66,19 @@ function isTruthy(val) {
 async function updateFinancials() {
     const args = process.argv.slice(2);
     const saveFlag = args.includes('--save');
-    const showPL = args.includes('--pl');
-    const showBS = args.includes('--bs');
-    const showPLSub = args.includes('--pl-sub');
-    const showBSSub = args.includes('--bs-sub');
-    const showVendor = args.includes('--vendor');
+    const showAll = args.includes('--all');
+    const showPL = args.includes('--pl') || showAll;
+    const showBS = args.includes('--bs') || showAll;
+    const showPLSub = args.includes('--pl-sub') || showAll;
+    const showBSSub = args.includes('--bs-sub') || showAll;
+    const showVendor = args.includes('--vendor') || showAll;
     const showVendorSub = args.includes('--vendor-sub');
-    const showCustomer = args.includes('--customer');
+    const showCustomer = args.includes('--customer') || showAll;
     const showCustomerSub = args.includes('--customer-sub');
-    const showChecker = args.includes('--checker');
+    const showChecker = args.includes('--checker') || showAll;
+
     const showDebug = args.includes('--debug');
-    const show1099All = args.includes('--1099');
+    const show1099All = args.includes('--1099') || showAll;
     const show1099NEC = args.includes('--1099=NEC') || args.includes('--1099-nec');
     const show1099INT = args.includes('--1099=INT');
     const show1099 = show1099All || show1099NEC || show1099INT;
@@ -106,6 +108,7 @@ Arguments:
 
 Flags:
   --help          Show this help message.
+  --all           Run ALL standard reports (P&L Detailed, BS Detailed, Vendor, Customer, 1099). Print-only.
   --save          Save changes to the Excel file (Summary tab and formatting).
                   (Default behavior is print-only, which does not modify the file).
   --checker       Run the Data Integrity Checker and verify row-by-row categorization issues.
@@ -132,7 +135,7 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file'
+        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file', '--all'
     ];
 
     // Check for unknown arguments
@@ -143,8 +146,7 @@ Example:
         process.exit(1);
     }
 
-    const specificFilter = showPL || showPLSub || showBS || showBSSub || showVendor || showVendorSub || showCustomer || showCustomerSub || showDetails || show1099;
-    const showAll = !specificFilter;
+
 
     let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
     let originalInputPath = filename; // Store original input for path resolution
@@ -2259,6 +2261,22 @@ Example:
         const activeNEC = showAll || show1099All || show1099NEC;
         const activeINT = showAll || show1099All || show1099INT;
 
+        // Display Payer Info (Company Info)
+        const p = payerInfo;
+        const pName = p['companyname'] || p['payername'] || p['businessname'] || p['name'] || 'Unknown_Payer';
+        const pTIN = p['tin'] || p['ein'] || p['taxid'] || 'MISSING';
+        const pAddr = p['address'] || 'MISSING';
+        const pEmail = p['email'] || 'MISSING';
+        const pPhone = p['phone'] || 'MISSING';
+
+        console.log(`\n--- 1099 PREPARATION ---`);
+        console.log(`Payer Information (from Setup > CompanyInfo):`);
+        console.log(`  Name:    ${pName}`);
+        console.log(`  Tax ID:  ${pTIN}`);
+        console.log(`  Address: ${pAddr}`);
+        console.log(`  Contact: ${pEmail} / ${pPhone}`);
+        console.log('-'.repeat(40));
+
         if (activeNEC) print1099('NEC', reports.vendors1099NEC, 600);
         if (activeINT) print1099('INT', reports.vendors1099INT, 0);
 
@@ -2305,10 +2323,10 @@ Example:
             const pPhone = p['phone'] || p['phonenumber'] || '';
 
             // Build CSV Content
-            // Header: Payer... , Recipient... , Amount, Form
+            // Header: R (Recipient)... , P (Payer)... , Amount, Form (REORDERED per User Request)
             const headers = [
-                'Payer Name', 'Payer TIN', 'Payer Address', 'Payer City', 'Payer State', 'Payer Zip', 'Payer Country', 'Payer Email', 'Payer Phone',
-                'Recipient Name', 'Recipient Business Name', 'Recipient TIN', 'Recipient Address', 'Recipient Email', 'Recipient Phone',
+                'R Name', 'R Business Name', 'R TIN', 'R Address', 'R Email', 'R Phone',
+                'P Name', 'P TIN', 'P Address', 'P City', 'P State', 'P Zip', 'P Country', 'P Email', 'P Phone',
                 'Amount', 'Form 1099 Type'
             ];
 
@@ -2316,8 +2334,8 @@ Example:
 
             csvRows.forEach(r => {
                 const row = [
-                    `"${pName}"`, `"${pTIN}"`, `"${pAddr}"`, `"${pCity}"`, `"${pState}"`, `"${pZip}"`, `"${pCountry}"`, `"${pEmail}"`, `"${pPhone}"`,
                     `"${r.name || ''}"`, `"${r.business || ''}"`, `"${r.ssn || ''}"`, `"${r.address || ''}"`, `"${r.email || ''}"`, `"${r.phone || ''}"`,
+                    `"${pName}"`, `"${pTIN}"`, `"${pAddr}"`, `"${pCity}"`, `"${pState}"`, `"${pZip}"`, `"${pCountry}"`, `"${pEmail}"`, `"${pPhone}"`,
                     r.amount.toFixed(2),
                     r.form
                 ];
@@ -2909,24 +2927,39 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     if (flags.show1099) {
         const ws = wb.addWorksheet('1099 Data');
         ws.columns = [
-            { header: 'Last Name / Business', width: 25 }, { header: 'First Name', width: 20 }, { header: 'Type', width: 15 },
-            { header: 'TIN Type', width: 10 }, { header: 'TIN', width: 15 }, { header: 'Email', width: 25 },
-            { header: 'Phone Number', width: 15 }, { header: 'Address', width: 30 }, { header: 'City', width: 15 },
-            { header: 'State', width: 5 }, { header: 'Zip Code', width: 10 }, { header: 'Country', width: 10 },
-            { header: 'Amount', width: 15 }
+            // R = Recipient
+            { header: 'R Name', width: 25 }, { header: 'R Business Name', width: 25 },
+            { header: 'R TIN', width: 15 }, { header: 'R Address', width: 30 },
+            { header: 'R Email', width: 25 }, { header: 'R Phone', width: 15 },
+            // P = Payer
+            { header: 'P Name', width: 25 }, { header: 'P TIN', width: 15 },
+            { header: 'P Address', width: 30 }, { header: 'P City', width: 15 },
+            { header: 'P State', width: 5 }, { header: 'P Zip', width: 10 },
+            { header: 'P Country', width: 10 }, { header: 'P Email', width: 20 }, { header: 'P Phone', width: 15 },
+            // Details
+            { header: 'Amount', width: 15 }, { header: 'Form 1099 Type', width: 10 }
         ];
+
+        // Prepare Payer Info once
+        const p = payerInfo || {};
+        const pName = p['companyname'] || p['payername'] || p['businessname'] || p['name'] || '';
+        const pTIN = p['tin'] || p['ein'] || p['taxid'] || '';
+        const pAddr = p['address'] || '';
+        const pCity = p['city'] || '';
+        const pState = p['state'] || '';
+        const pZip = p['zipcode'] || p['zip'] || '';
+        const pCountry = p['country'] || '';
+        const pEmail = p['email'] || '';
+        const pPhone = p['phone'] || p['phonenumber'] || '';
+
         (reports.data1099 || []).forEach(details => {
-            let entityType = details.entityType || (details.firstName ? 'Individual' : 'Business');
-            const finalLastName = details.lastName || details.business || details.name || 'Unknown';
-            const finalFirst = details.firstName || '';
-            let tinType = details.tinType || 'EIN';
-            if (!details.tinType) {
-                const cleanTIN = (details.ssn || '').replace(/[^0-9]/g, '');
-                if (cleanTIN.length === 9 && entityType.toLowerCase().startsWith('ind')) tinType = 'SSN';
-            }
-            ws.addRow([finalLastName, finalFirst, entityType, tinType, details.ssn || '', details.email || '', details.phone || '', details.address || '', details.city || '', details.state || '', details.zip || '', details.country || '', details.amount]);
+            ws.addRow([
+                details.name || '', details.business || '', details.ssn || '', details.address || '', details.email || '', details.phone || '',
+                pName, pTIN, pAddr, pCity, pState, pZip, pCountry, pEmail, pPhone,
+                details.amount, details.form
+            ]);
         });
-        ws.getColumn(13).numFmt = '#,##0.00';
+        ws.getColumn(16).numFmt = '#,##0.00'; // Amount Column
     }
 
     // 6. Processing Log
