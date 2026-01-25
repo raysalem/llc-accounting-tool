@@ -436,6 +436,20 @@ Example:
                 // Fallback for missing/ambiguous Report column
                 rType = 'Balance Sheet';
             }
+            // STRICT VALIDATION: Check for Report/Type mismatch
+            const isPL = rType === 'P&L';
+            const isBS = rType === 'Balance Sheet';
+            const tSanitized = tLower.replace(/[^a-z]/g, '');
+
+            if (isPL) {
+                if (!tSanitized.includes('income') && !tSanitized.includes('expense')) {
+                    console.warn(`[!] CRITICAL CONFIG ERROR (Row ${rowNumber}): Category "${trimmed}" is set to "P&L" but Type is "${typeVal}". P&L requires Income or Expense.`);
+                }
+            } else if (isBS) {
+                if (!tSanitized.includes('asset') && !tSanitized.includes('liability') && !tSanitized.includes('equity')) {
+                    console.warn(`[!] CRITICAL CONFIG ERROR (Row ${rowNumber}): Category "${trimmed}" is set to "Balance Sheet" but Type is "${typeVal}". BS requires Asset, Liability, or Equity.`);
+                }
+            }
 
             uniqueCategories.set(lower, {
                 report: rType,

@@ -40,6 +40,10 @@ This document defines the official feature set of the functionality. Every featu
 - **Strict Headers**:
   - `Setup` sheet must be readable at Row 1.
   - Missing headers trigger a CRITICAL ERROR.
+- **Strict Category Validation**:
+  - `P&L` categories MUST be Type `Income` or `Expense`.
+  - `Balance Sheet` categories MUST be Type `Asset`, `Liability`, or `Equity`.
+  - Violations trigger a `[!] CRITICAL CONFIG ERROR`.
 
 ## 4. Test Gaps Checklist
 - [ ] Create test for `--bs-sub` output format (verifying Positive Magnitude logic).

@@ -11,7 +11,7 @@ The "Setup" sheet is the brain of the application. It processes **4 Distinct Tab
     | :--- | :--- |
     | `Category` | The main bucket name (e.g., "Office", "Travel"). |
     | `SubCategory` | (Optional) Granular detail (e.g., "Software", "Flights"). |
-    | `AccountType` / `Type` | `Asset`, `Liability`, `Income`, `Expense`. |
+    | `AccountType` / `Type` | **Strictly Enforced**: <br> • If Report=`P&L`: Must be `Income` or `Expense`. <br> • If Report=`Balance Sheet`: Must be `Asset`, `Liability`, or `Equity`. |
     | `Report` / `PnL/BS` | `P&L` or `Balance Sheet`. Determines which report it hits. |
 
 ## 2. Vendor Configuration Table

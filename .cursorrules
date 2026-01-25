@@ -24,7 +24,7 @@
 *These rules govern how you (the AI) must operate.*
 
 ### 📚 Documentation & Testing Mandate
-**Every project must maintain these 4 pillars:**
+**Every project must maintain these 5 pillars:**
 1.  `DEPENDENCIES.md`: List of external libs/tools.
 2.  `FEATURE_SET.md`: Official feature list + Test coverage status.
 3.  `USAGE.md` (or `run commands.md`): Practical usage guide/cheatsheet.
