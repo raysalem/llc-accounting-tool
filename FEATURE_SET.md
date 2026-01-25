@@ -27,7 +27,7 @@ This document defines the official feature set of the functionality. Every featu
 | **Batch Processing** | `batch_run.js` acts as a **Proxy Wrapper**. It iterates files matches and executes `report.js`. It inherits all output logic (including 1099 formatting) from the core report tool. | ✅ `Manual Verification` |
 | `--1099=NEC` | Generates only 1099-NEC reports. | ✅ `test_1099_threshold.js` |
 | `--1099=INT` | Generates only 1099-INT reports. | ✅ `test_1099_threshold.js` |
-| `--details "Cat"`| Prints transaction-level details for a specific category. | ✅ `test_details_flag.js` |
+| `--details "Name"`| Prints transaction-level details for a specific Category, Vendor, or Customer. | ✅ `test_details_extended.js` |
 | `--ignore-vendors`| Skips loading external vendor database files. | ⚠️ **Needs Test** |
 | `--vendor-file` | Loads a custom vendor file path. | ⚠️ **Needs Test** |
 
