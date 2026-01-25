@@ -32,34 +32,38 @@ async function createTestWorkbook() {
     const setup = wb.addWorksheet('Setup');
     setup.getRow(1).values = ['Category', '', 'Type', 'Report'];
 
-    setup.getRow(2).values = ['Investment', '', 'Asset', 'Balance Sheet'];
-    setup.getRow(3).values = ['Mortgage', '', 'Liability', 'Balance Sheet'];
+    // Define Categories (Cols A-D)
+    setup.addRow(['Investment', '', 'Asset', 'Balance Sheet']);
+    setup.addRow(['Mortgage', '', 'Liability', 'Balance Sheet']);
+    setup.addRow(['Equipment', '', 'Asset', 'Balance Sheet']);
+    setup.addRow(['Bank', '', 'Asset', 'Balance Sheet']);
 
-    // Sheet Config
-    setup.getRow(1).getCell(15).value = 'SheetName';
-    setup.getRow(1).getCell(16).value = 'Type';
-    setup.getRow(1).getCell(17).value = 'Category';
-    setup.getRow(1).getCell(18).value = 'Offset';
-    setup.getRow(1).getCell(19).value = 'StartBalance';
+    // Sheet Config (Start at Col 15, Row 1)
+    // We must manually place headers/values since addRow affects all columns (mostly A)
+    setup.getCell('O1').value = 'SheetName';
+    setup.getCell('P1').value = 'Type';
+    setup.getCell('Q1').value = 'Category';
+    setup.getCell('R1').value = 'Offset';
+    setup.getCell('S1').value = 'StartBalance';
 
-    setup.getRow(2).getCell(15).value = 'Bank';
-    setup.getRow(2).getCell(16).value = 'Asset';
-    setup.getRow(2).getCell(17).value = 'Bank';
-    setup.getRow(2).getCell(18).value = 1;
-    setup.getRow(2).getCell(19).value = 10000;
+    setup.getCell('O2').value = 'Bank';
+    setup.getCell('P2').value = 'Bank';
+    setup.getCell('Q2').value = 'Bank'; // Links to Category 'Bank'
+    setup.getCell('R2').value = 1;
+    setup.getCell('S2').value = 10000;
 
     // 2. Ledger
-    wb.addWorksheet('Ledger').getRow(1).values = ['Date', 'Description', 'Category', 'Debit', 'Credit'];
+    wb.addWorksheet('Ledger').addRow(['Date', 'Description', 'Category', 'Debit', 'Credit']);
 
     // 3. Transactions (Bank)
     const bank = wb.addWorksheet('Bank');
-    bank.getRow(1).values = ['Date', 'Description', 'Amount', 'Category'];
+    bank.addRow(['Date', 'Description', 'Amount', 'Category']);
+    bank.addRow(['2025-01-01', 'Buy Asset', -1000, 'Investment']);
+    bank.addRow(['2025-01-02', 'Pay Debt', -1000, 'Mortgage']);
 
-    // Transaction 1: Buy Investment (-1000)
-    bank.getRow(2).values = ['2025-01-01', 'Buy Asset', -1000, 'Investment'];
-
-    // Transaction 2: Pay Mortgage (-1000)
-    bank.getRow(3).values = ['2025-01-02', 'Pay Debt', -1000, 'Mortgage'];
+    // 4. Ledger Entries
+    wb.getWorksheet('Ledger').addRow(['2025-01-03', 'Manual Equipment', 'Equipment', 500, 0]);
+    wb.getWorksheet('Ledger').addRow(['2025-01-03', 'Manual Equipment', 'Bank', 0, 500]);
 
     await wb.xlsx.writeFile(testFile);
 }
@@ -88,10 +92,13 @@ async function runTest() {
 
         let investVal = null;
         let mortgageVal = null;
+        let equipVal = null;
 
         lines.forEach(l => {
+            // ... existing loop ...
             if (l.includes('Investment')) investVal = parseValue(l);
             if (l.includes('Mortgage')) mortgageVal = parseValue(l);
+            if (l.includes('Equipment')) equipVal = parseValue(l);
         });
 
         let passed = true;
@@ -130,6 +137,13 @@ async function runTest() {
         } else {
             // If my "Invert Unlinked" logic accidentally hit Liabilities, it might be +1000.
             console.error(`❌ FAIL: Mortgage Value is ${mortgageVal}. Should be -1000.`);
+            passed = false;
+        }
+
+        if (equipVal === 500) {
+            console.log(`✓ PASS: Equipment (Ledger) is 500. Polarity Correct.`);
+        } else {
+            console.error(`❌ FAIL: Equipment (Ledger) is ${equipVal}. Should be 500. (Likely flipped to -500 by report.js)`);
             passed = false;
         }
 

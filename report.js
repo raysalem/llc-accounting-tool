@@ -155,7 +155,9 @@ Example:
 
     // Resolve shortcut if needed
     if (fs.existsSync(filename)) {
-        console.log(`LLC Accounting Tool v2.1.0`);
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        console.log(`LLC Accounting Tool v${pkg.version}`);
+
         const resolved = resolveShortcut(filename);
         if (resolved !== filename) {
             if (showDebug) console.log(`Resolved shortcut '${filename}' -> '${resolved}'`);
@@ -969,6 +971,8 @@ Example:
                         if (val === 'yes' || val === 'nec' || val === 'misc' || val === 'int') {
                             details.req = 'YES';
                             details.type = (val === 'yes') ? 'NEC' : val.toUpperCase();
+                        } else if (val === 'no' || val === 'n' || val === 'false') {
+                            details.req = 'NO';
                         }
                     }
 
@@ -980,6 +984,9 @@ Example:
                         // CRITICAL: Also update the 1099 tracking map so these vendors are recognized during transaction processing
                         if (details.req === 'YES') {
                             vendor1099Map.set(k, { type: details.type || 'NEC', req: 'YES' });
+                        } else if (details.req === 'NO') {
+                            // Explicitly disable 1099 if external file says NO (overrides Setup)
+                            vendor1099Map.delete(k);
                         }
                     });
                 });
@@ -1556,6 +1563,8 @@ Example:
 
         const diff = Math.abs(finalCalcEnd - config.endBalance);
 
+        // Verification Log
+
     }
 
     // --- 3. Process Ledger ---
@@ -1629,24 +1638,23 @@ Example:
             const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
             const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
 
-            ledgerDebitTotal += dr;
-            ledgerCreditTotal += cr;
-
-            // Accumulate validation total (Dr should equal Cr, so Dr - Cr should be 0 across all rows)
-            ledgerValidationTotal += (dr - cr);
-
             const vendorVal = ledgerMap.vendor ? getVal(row.getCell(ledgerMap.vendor)) : '';
             const customerVal = ledgerMap.customer ? getVal(row.getCell(ledgerMap.customer)) : '';
 
             if (!rawDate) {
                 if (cat || dr || cr || rawDesc) {
                     console.error(`\n[CRITICAL ERROR] Ledger Row ${r}: Missing Date!`);
-                    console.error(`In the General Ledger, every transaction row must have an explicit Date.`);
+                    console.error(`In the General Ledger, every transaction row must have an explicit Date. (Values: ${rawDesc} | ${cat})`);
                     console.error(`Please fix the Ledger sheet and try again.`);
                     process.exit(1);
                 }
                 return; // Truly empty row
             }
+
+            ledgerDebitTotal += dr;
+            ledgerCreditTotal += cr;
+            // Accumulate validation total (Dr should equal Cr, so Dr - Cr should be 0 across all rows)
+            ledgerValidationTotal += (dr - cr);
 
             // Vendor Validation
             if (vendorVal && vendorVal.toString().trim()) {
@@ -1840,47 +1848,66 @@ Example:
 
     // --- 3b. Post-Ledger Wallet Validation ---
     // Now that Ledger entries are integrated into 'catStats', we can accurately check Wallet Balances.
+
+    if (showChecker) console.log(`\n--- WALLET RECONCILIATION ---`);
+    if (showChecker) console.log(`Sheet Name`.padEnd(30) + `Start`.padStart(10) + `Sheet`.padStart(10) + `  Ledger`.padStart(10) + `  End (Calc)`.padStart(12) + `  End (Exp)`.padStart(12) + `  Diff`.padStart(10));
+
     sheetConfigs.forEach(config => {
-        if (config.endBalance !== null) {
-            // Determine "Sheet Change" (Pure Sheet Impact)
-            // Assets: SheetTotal (Pos=Inc, Neg=Dec). Liabilities: -SheetTotal (Exp=Inc, Pay=Dec).
-            // Actually, sheetTotal is Signed (Inc/Exp).
-            // For Liability sheets (Flip=True), Expenses are Negative. We want Positive Increase.
-            const sheetChangeVal = (config.type.toLowerCase() === 'expense') ? -sheetTotalMap.get(config.name) : sheetTotalMap.get(config.name);
+        if (config.type === 'ledger') return;
 
-            // Re-resolve Linkage (same logic as before, but relying on final state)
-            let effectiveLink = config.linkedAccount;
-            if (!effectiveLink && config.cat && config.type !== 'ledger') {
-                const jitMatch = uniqueCategories.get(config.cat.toLowerCase());
-                if (jitMatch) effectiveLink = jitMatch.displayName;
+        // Re-Calculate End Balance using same logic, but now catStats is full
+        let calculatedEnd = 0;
+        let sheetTotal = processedSheetTotals[config.name] || 0;
+
+        let effectiveLink = config.linkedAccount;
+        if (!effectiveLink && config.cat) {
+            const jitMatch = uniqueCategories.get(config.cat.toLowerCase());
+            if (jitMatch) effectiveLink = jitMatch.displayName;
+        }
+
+        let ledgerImpact = 0;
+        let method = "Manual";
+        let usedGlobal = false;
+
+        // Determine correct "Sheet Change" display polarity
+        const sheetChangeVal = (config.type.toLowerCase() === 'expense') ? -sheetTotal : sheetTotal;
+
+        if (effectiveLink && catStats[effectiveLink]) {
+            // Global Balance (Start + Sheet + Ledger)
+            calculatedEnd = catStats[effectiveLink].total;
+            method = "Global";
+            usedGlobal = true;
+
+            ledgerImpact = calculatedEnd - (config.startBalance || 0) - sheetChangeVal;
+
+        } else {
+            // Unlinked: Just Start + Sheet
+            calculatedEnd = (config.startBalance || 0) + sheetChangeVal;
+        }
+
+        const exp = config.endBalance;
+        if (exp !== null && exp !== undefined) {
+            const diff = Math.abs(calculatedEnd - exp);
+
+            if (showChecker) {
+                console.log(
+                    `${config.shortName.substring(0, 29).padEnd(30)}` +
+                    `${(config.startBalance || 0).toFixed(2).padStart(10)}` +
+                    `${sheetChangeVal.toFixed(2).padStart(10)}` +
+                    `${ledgerImpact.toFixed(2).padStart(10)}` +
+                    `${calculatedEnd.toFixed(2).padStart(12)}` +
+                    `${exp.toFixed(2).padStart(12)}` +
+                    `${diff > 0.05 ? ('!' + diff.toFixed(2)).padStart(10) : ''.padStart(10)}`
+                );
             }
 
-            let finalCalcEnd = 0;
-            let ledgerAdj = 0;
-            let usedGlobal = false;
-
-            if (effectiveLink && catStats[effectiveLink]) {
-                finalCalcEnd = catStats[effectiveLink].total;
-                usedGlobal = true;
-                ledgerAdj = finalCalcEnd - (config.startBalance || 0) - sheetChangeVal;
-            } else {
-                finalCalcEnd = (config.startBalance || 0) + sheetChangeVal;
-                ledgerAdj = 0;
+            if (diff > 0.05) {
+                hasErrors = true;
+                console.warn(`  [!] END BALANCE MISMATCH: "${config.name}" (Calc: ${calculatedEnd.toFixed(2)} vs Exp: ${exp.toFixed(2)})`);
             }
-
-            const diff = Math.abs(finalCalcEnd - config.endBalance);
-            walletCheckResults.push({
-                sheet: config.shortName,
-                start: config.startBalance || 0,
-                change: sheetChangeVal,
-                ledgerPart: ledgerAdj,
-                calcEnd: finalCalcEnd,
-                expected: config.endBalance,
-                diff: diff,
-                passed: diff < 0.01
-            });
         }
     });
+
 
     // --- 4. Prepare Reports ---
     const reports = { pl: [], bs: [] };
@@ -1986,14 +2013,17 @@ Example:
             // If an Asset is NOT a Source Sheet (Linked), it is likely an Accumulator (e.g. Equipment, Investment).
             // Spending (Negative Flow) should INCREASE its value.
             if (!isLinked) {
-                // Invert Polarity
-                item.value = item.value * -1;
-                item.opening = item.opening * -1;
-                // Add/Sub should swap (Spending was Sub, now is Add) - But effectively we just swap values
-                const oldAdd = item.add;
-                const oldSub = item.sub;
-                item.add = oldSub;
-                item.sub = oldAdd;
+                // Polarity Fix: Only flip if the value is NEGATIVE (Scanner derived spending).
+                if (item.value < 0) {
+                    // Invert Polarity
+                    item.value = item.value * -1;
+                    item.opening = item.opening * -1;
+                    // Add/Sub should swap (Spending was Sub, now is Add) - But effectively we just swap values
+                    const oldAdd = item.add;
+                    const oldSub = item.sub;
+                    item.add = oldSub;
+                    item.sub = oldAdd;
+                }
             }
             assets.push(item);
         } else if (t.includes('liability') || t.includes('credit') || t.includes('cc') || t.includes('payable') || t.includes('loan') || t.includes('debt')) {
@@ -2005,12 +2035,16 @@ Example:
             // Safer to just push as is, or apply inversion if it looks like an asset?
             // Let's assume fallback is Asset, so apply logic.
             if (!isLinked) {
-                item.value = item.value * -1;
-                item.opening = item.opening * -1;
-                const oldAdd = item.add;
-                const oldSub = item.sub;
-                item.add = oldSub;
-                item.sub = oldAdd;
+                // Polarity Fix: Only flip if the value is NEGATIVE (Scanner derived spending).
+                // If the value is POSITIVE (Ledger Debit), keep it positive.
+                if (item.value < 0) {
+                    item.value = item.value * -1;
+                    item.opening = item.opening * -1;
+                    const oldAdd = item.add;
+                    const oldSub = item.sub;
+                    item.add = oldSub;
+                    item.sub = oldAdd;
+                }
             }
             assets.push(item);
         }
