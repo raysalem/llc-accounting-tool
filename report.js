@@ -88,10 +88,10 @@ async function updateFinancials() {
     const vendorFileIndex = args.indexOf('--vendor-file');
     const customVendorFile = vendorFileIndex !== -1 && args[vendorFileIndex + 1] ? args[vendorFileIndex + 1] : null;
 
-    // Parse --details <Category>
+    // Parse --details <Filter>
     const detailsIndex = args.indexOf('--details');
-    const targetDetailsCategory = detailsIndex !== -1 && args[detailsIndex + 1] ? args[detailsIndex + 1].toLowerCase().trim() : null;
-    const showDetails = !!targetDetailsCategory;
+    const targetDetailsFilter = detailsIndex !== -1 && args[detailsIndex + 1] ? args[detailsIndex + 1].toLowerCase().trim() : null;
+    const showDetails = !!targetDetailsFilter;
 
     // Help Menu
     if (args.includes('--help')) {
@@ -126,7 +126,7 @@ Flags:
   --1099=INT      (Optional) Generate only 1099-INT reports.
   --ignore-vendors (Optional) Skip loading external "vendor.xlsx" or "vendor.csv" files.
   --vendor-file [path] (Optional) Specify a custom path to a "vendor.xlsx" or "vendor.csv" file.
-  --details "Cat" (Optional) List all transactions for a specific Category (e.g., --details "Office Supplies").
+  --details "Name" (Optional) List all transactions matching a specific Category, Vendor, or Customer.
 
 Example:
   node report.js "My_Books_2025.xlsx" --checker --save
@@ -1289,16 +1289,7 @@ Example:
                     catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
 
                     // Capture Details
-                    if (showDetails && (catLower === targetDetailsCategory || displayCat.toLowerCase() === targetDetailsCategory)) {
-                        detailsRows.push({
-                            date: displayDate,
-                            desc: rawDesc,
-                            subCat: sName,
-                            amount: amount,
-                            sheet: sheet.name,
-                            row: r
-                        });
-                    }
+
                 }
 
                 if (vendorVal && vendorVal.toString().trim()) {
@@ -1419,6 +1410,27 @@ Example:
                                 });
                             }
                         }
+                    }
+                }
+                // Capture Details (Generic Filter)
+                if (showDetails) {
+                    const cNorm = catLower;
+                    const cDisp = cNorm ? (uniqueCategories.get(cNorm)?.displayName || cNorm) : null;
+                    const vNorm = vendorVal ? NORM_VEND(vendorVal.toString()) : null;
+                    const custNorm = customerVal ? NORM_VEND(customerVal.toString()) : null;
+
+                    const match = (cNorm === targetDetailsFilter) || (cDisp && cDisp.toLowerCase() === targetDetailsFilter) ||
+                        (vNorm === targetDetailsFilter) || (custNorm === targetDetailsFilter);
+
+                    if (match) {
+                        detailsRows.push({
+                            date: displayDate,
+                            desc: rawDesc,
+                            subCat: subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)',
+                            amount: amount,
+                            sheet: sheet.name,
+                            row: r
+                        });
                     }
                 }
             } catch (rowError) {
@@ -2427,7 +2439,7 @@ Example:
     }
 
     if (showDetails) {
-        console.log(`\n--- DETAILS: "${targetDetailsCategory}" ---`);
+        console.log(`\n--- DETAILS: "${targetDetailsFilter}" ---`);
         if (detailsRows.length === 0) {
             console.log('(No matching transactions found)');
         } else {
