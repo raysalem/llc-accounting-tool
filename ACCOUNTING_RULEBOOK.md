@@ -85,3 +85,75 @@ Send these CSVs + your W-9 PDFs to your CPA or upload to your filing provider.
 - [ ] Terminal: `node report.js --checker` returns clean (no illegal vendors).
 - [ ] Terminal: `node report.js --vendor` review completed (caught missed contractors).
 - [ ] Terminal: `node report.js --1099` outputs valid CSVs.
+
+---
+
+## Part 4: General Ledger Adjustments (Moving Money)
+Sometimes you need to move amounts between categories (e.g., you categorized an expense wrong, or need to split a transaction). You do this in the `General Ledger` sheet.
+
+### Example 1: Reclassifying an Expense
+*Scenario:* You bought a Printer for $400, but it was auto-categorized as "Office Supplies" (Expense) by the Bank feed. You want it to be "Equipment" (Asset).
+
+1.  **Bank Sheet (Original):**
+    *   Date: 1/15/2025
+    *   Desc: Amazon Printer
+    *   Amount: -$400.00
+    *   Category: Office Supplies (Automatically assigned)
+
+2.  **P&L Impact (Before Fix):**
+    *   Office Supplies: $400 Expense (Wrong)
+    *   Equipment: $0 (Wrong)
+
+3.  **General Ledger (Correction):**
+    You need to "Reverse" the expense and "Add" the asset.
+    *   **Step A (Remove Expense):** Credit "Office Supplies" $400. (Credits reduce Expenses).
+    *   **Step B (Add Asset):** Debit "Equipment" $400. (Debits increase Assets).
+
+    | Date | Description | Category | Debit | Credit |
+    | :--- | :--- | :--- | :--- | :--- |
+    | 1/15/2025 | Reclassify Printer to Asset | Equipment | 400.00 | |
+    | 1/15/2025 | Reclassify Printer to Asset | Office Supplies | | 400.00 |
+
+4.  **P&L Impact (After Fix):**
+    *   Office Supplies: $0 ($400 original - $400 credit) -> **Correct**
+    *   Equipment (Asset): $400 (New Debit) -> **Correct**
+
+### Rule of Thumb:
+*   To **INCREASE** an Expense or Asset: **DEBIT** it.
+*   To **DECREASE** an Expense or Asset: **CREDIT** it.
+*   To **INCREASE** Income or Liability: **CREDIT** it.
+*   To **DECREASE** Income or Liability: **DEBIT** it.
+
+---
+
+## Part 5: Credit Card Payments & Transfers
+*Goal: Avoid double-counting payments when you have both the Bank and Credit Card feeds.*
+
+### The Problem of Double Counting
+If you categorize the payment in **BOTH** the Bank Feed ("Payment to CC") and the CC Feed ("Payment Received") as the same Liability category, you count the debt reduction twice.
+
+### The Solution: "Transfer [Account]" Model
+We treat the incoming payment on the Credit Card side as a **Transfer**, which is excluded from the P&L and Balance Sheet reports (because the Bank side is already recording the "Cash -> Liability" movement).
+
+**Step 1: Create Categories**
+In your `Setup` tab, create a category for each Credit Card transfer.
+*   **Category:** `Transfer AX CC` (or `Transfer [Your Card Name]`)
+*   **Type:** `Transfer`
+*   **Report:** `None` (or `Transfer`) -- *Crucially, do NOT set this to P&L or Balance Sheet.*
+
+**Step 2: Assign in Sheets**
+*   **Bank Sheet:** When you pay the bill, use the Liability Category (e.g., `AX CC`). This correctly reduces the Liability on the Balance Sheet.
+*   **Credit Card Sheet:** When you see the payment received row, use the Transfer Category (e.g., `Transfer AX CC`). This effectively "ignores" the row for reporting purposes, preventing the double-count.
+
+**Audit Check:**
+You can filter for `Transfer AX CC` in the tool to ensure it matches the total payments sent from the Bank.
+
+### Refunds & Rewards (Important Exception)
+Not all positive numbers on your Credit Card statement are Payments!
+*   **Payments** (Money from Bank): Use **`Transfer [Account]`**.
+*   **Refunds** (Return of Goods): Use the **Original Expense Category** (or Uncategorized).
+    *   *Why?* A refund truly reduces your expense and liability. It *should* be counted in the report.
+*   **Rewards/Cashback**: Use a specific Income/Contra-Expense category (e.g., `CC Rewards`).
+    *   *Why?* This is "free money" reducing your debt. It *should* be counted.
+
+**Summary:** Only exclude **Transfers** (money moving between your own accounts). Do not exclude Refunds or Rewards.

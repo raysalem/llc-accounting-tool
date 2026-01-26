@@ -349,6 +349,7 @@ Example:
     const colSubCategory = getCol('subcategory');
     const colType = getCol('accounttype') || getCol('type');
     const colReport = getCol('report') || getCol('pnlbs') || getCol('statement') || getCol('bspl');
+    const colTransferAccount = getCol('transferaccount') || getCol('transfer');
 
     // Table 2: Vendors
     const colVendor = getCol('vendors') || getCol('vendor');
@@ -406,6 +407,7 @@ Example:
             const typeVal = colType ? getVal(row.getCell(colType)) : '';
             const subCatVal = colSubCategory ? getVal(row.getCell(colSubCategory)) : '';
             const report = colReport ? getVal(row.getCell(colReport)) : '';
+            const transferAccountVal = colTransferAccount ? getVal(row.getCell(colTransferAccount)).toString().trim() : '';
             validCategories.add(lower);
 
             // Track valid subcategories
@@ -438,6 +440,10 @@ Example:
                 rType = 'Balance Sheet';
             } else if (rUpper.includes('P&L') || rUpper.includes('PROFIT')) {
                 rType = 'P&L';
+            } else if (rUpper.includes('TRANSFER') || rUpper.includes('IGNORE')) {
+                rType = 'Transfer';
+            } else if (tLower.includes('transfer')) {
+                rType = 'Transfer';
             } else if (tLower.includes('asset') || tLower.includes('liability') || tLower.includes('bank') || tLower.includes('credit') || tLower.includes('cc')) {
                 // Fallback for missing/ambiguous Report column
                 rType = 'Balance Sheet';
@@ -461,7 +467,8 @@ Example:
                 report: rType,
                 accountType: typeVal,
                 subCategory: subCatVal,
-                displayName: trimmed
+                displayName: trimmed,
+                transferAccount: transferAccountVal
             });
         }
 
@@ -1131,6 +1138,9 @@ Example:
         }
 
         let processedRows = 0;
+        let excludedFromLinkage = 0;
+        let excludedAdds = 0;
+        let excludedSubs = 0;
 
         if (showDebug && sheet.name.includes('AX CC')) {
             console.log(`[DEBUG AX CC] Sheet Found. Config Offset: ${config.offset}. Total Rows in Sheet: ${sheet.rowCount}`);
@@ -1234,9 +1244,11 @@ Example:
                 if (config.flip) amount *= -1;
 
                 // Accumulate Sheet Total (Net Flow)
+                // Note: Net Flow affects the Asset/Liability Balance linked to this sheet.
+                // However, we must EXCLUDE "Transfer" rows from this impact if they are meant to be ignored.
                 if (amount >= 0) sheetAdds += amount; else sheetSubs += amount;
                 sheetTotal += amount;
-                if (pType === 'cc') ccTotal += amount; else bankTotal += amount; // retained for legacy or verification
+                if (pType === 'cc') ccTotal += amount; else bankTotal += amount;
 
                 // Track global processed total for this sheet
                 processedSheetTotals[config.name] = (processedSheetTotals[config.name] || 0) + amount;
@@ -1248,6 +1260,43 @@ Example:
 
                 // Define catLower for use in vendor/customer tracking
                 const catLower = categoryVal ? categoryVal.toString().trim().toLowerCase() : null;
+
+                // Check for EXCLUSION (Transfer)
+                // If a row is categorized as 'Transfer', it should NOT impact the Linked Liability Account Balance?
+                // Logic: 
+                // CC Sheet: Payment (+100). Category "Transfer". 
+                // If we include +100 in sheetTotal, it reduces Liability.
+                // If we WANT to ignore it, we must subtract 100 from sheetTotal before applying to Link.
+                if (catLower) {
+                    const cData = uniqueCategories.get(catLower);
+                    if (cData) {
+                        if (cData.report === 'Transfer') {
+                            excludedFromLinkage += amount;
+                            if (amount >= 0) excludedAdds += amount; else excludedSubs += amount;
+
+                            if (showDebug) console.log(`[Transfer Logic] Excluding ${amount.toFixed(2)} from Linkage. Cat: "${cData.displayName}"`);
+                        } else if (cData.displayName.includes('Transfer')) {
+                            // Debugging why it missed?
+                            if (showDebug) console.log(`[Transfer Logic Debug] Found "${cData.displayName}" but Report Type is "${cData.report}" (Expected 'Transfer'). Amount: ${amount}`);
+                        }
+                    } else if (catLower.includes('transfer')) {
+                        if (showDebug) console.log(`[Transfer Logic Debug] Category "${catLower}" NOT FOUND in Config. Falling back to default handling.`);
+                    }
+
+                    if (cData && cData.report === 'Transfer') {
+                        // Already handled above, removed dup
+                        // Proceed to validation
+                        if (cData.transferAccount) {
+                            const targetAccount = cData.transferAccount.toLowerCase();
+                            const currentLink = (config.linkedAccount || '').toLowerCase();
+                            const currentName = (config.name || '').toLowerCase();
+                            // We expect 'Transfer AX CC' to be used ONLY in the sheet representing that account
+                            if (!currentLink.includes(targetAccount) && !currentName.includes(targetAccount)) {
+                                console.warn(`[!] CRITICAL WARNING (Row ${r}): Category "${cData.displayName}" expects Transfer Account "${cData.transferAccount}", but used in Sheet "${config.name}" (Linked: ${config.linkedAccount}). This may be incorrect.`);
+                            }
+                        }
+                    }
+                }
 
                 const sName = subCatVal ? subCatVal.toString().trim() : '(No Sub-Cat)';
 
@@ -1262,14 +1311,32 @@ Example:
                     const displayCat = uniqueCategories.get(catLower)?.displayName || catStr;
 
                     if (!catStats[displayCat]) catStats[displayCat] = { total: 0, subCats: {}, sheets: {} };
-                    catStats[displayCat].total += amount;
 
-                    if (amount >= 0) {
-                        if (!catStats[displayCat].add) catStats[displayCat].add = 0; // init check
-                        catStats[displayCat].add = (catStats[displayCat].add || 0) + amount;
+                    // Asset Polarity Logic: 
+                    // If target is an ASSET, we want Spending (Bank Withdrawals) to be POSITIVE (Increase in Asset).
+                    // If source is CC (Liability), Spending is already Positive.
+                    // If source is Bank (Asset), Spending is Negative. So we Flip Bank sources for Assets.
+                    let catAmount = amount;
+                    const catData = uniqueCategories.get(catLower);
+                    if (catData && catData.report === 'Balance Sheet') {
+                        const type = (catData.accountType || '').toLowerCase();
+                        if (type.includes('asset')) {
+                            // If config.flip is FALSE (Bank), then Spending is Negative. Invert it to Positive.
+                            // If config.flip is TRUE (CC), then Spending is Positive. Keep it Positive.
+                            if (!config.flip) {
+                                catAmount = amount * -1;
+                            }
+                        }
+                    }
+
+                    catStats[displayCat].total += catAmount;
+
+                    if (catAmount >= 0) {
+                        if (!catStats[displayCat].add) catStats[displayCat].add = 0;
+                        catStats[displayCat].add = (catStats[displayCat].add || 0) + catAmount;
                     } else {
                         if (!catStats[displayCat].sub) catStats[displayCat].sub = 0;
-                        catStats[displayCat].sub = (catStats[displayCat].sub || 0) + amount;
+                        catStats[displayCat].sub = (catStats[displayCat].sub || 0) + catAmount;
                     }
 
                     // Track Sheets for Display Category
@@ -1278,8 +1345,8 @@ Example:
                         catStats[displayCat].sheets[config.name] = { add: 0, sub: 0, total: 0 };
                     }
                     const cDS = catStats[displayCat].sheets[config.name];
-                    if (amount >= 0) cDS.add += amount; else cDS.sub += amount;
-                    cDS.total += amount;
+                    if (catAmount >= 0) cDS.add += catAmount; else cDS.sub += catAmount;
+                    cDS.total += catAmount;
 
                     // Validate subcategory if one is provided
                     if (subCatVal && sName !== '(No Sub-Cat)') {
@@ -1295,7 +1362,7 @@ Example:
                         }
                     }
 
-                    catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + amount;
+                    catStats[displayCat].subCats[sName] = (catStats[displayCat].subCats[sName] || 0) + catAmount;
 
                     // Capture Details
 
@@ -1475,18 +1542,20 @@ Example:
             // Balance Sheet Items:
             // Asset: Balance += sheetTotal
             // Liability/Equity: Balance -= sheetTotal
+            const effectiveSheetTotal = sheetTotal - excludedFromLinkage;
+
             if (isAsset) {
-                catStats[linkName].total += sheetTotal;
+                catStats[linkName].total += effectiveSheetTotal;
             } else {
-                catStats[linkName].total -= sheetTotal;
+                catStats[linkName].total -= effectiveSheetTotal;
             }
 
             let linkageMsg = `[Linkage Logic] Linked "${config.name}" to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
             if (config.startBalance && Math.abs(config.startBalance) > 0.001) {
                 catStats[linkName].total += config.startBalance;
-                linkageMsg = `[Linkage Logic] Applied Starting Balance (${config.startBalance.toFixed(2)}) and ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
+                linkageMsg = `[Linkage Logic] Applied Starting Balance (${config.startBalance.toFixed(2)}) and ${config.shortName} Total (${effectiveSheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
             } else {
-                linkageMsg = `[Linkage Logic] Applied ${config.shortName} Total (${sheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
+                linkageMsg = `[Linkage Logic] Applied ${config.shortName} Total (${effectiveSheetTotal.toFixed(2)}) to ${isAsset ? 'Asset' : 'Liability'} "${linkName}".`;
             }
 
             if (!catStats[linkName].sheets[config.name]) {
@@ -1495,27 +1564,30 @@ Example:
             const sStat = catStats[linkName].sheets[config.name];
             const sourceIsLiability = config.type.toLowerCase().includes('expense') || config.type.toLowerCase().includes('cc');
 
+            const effSheetAdds = sheetAdds - excludedAdds;
+            const effSheetSubs = sheetSubs - excludedSubs;
+
             if (isAsset) {
                 // Asset Target: Direct Mapping (Inflow=Add, Outflow=Sub)
-                sStat.total += sheetTotal;
-                sStat.add += sheetAdds;
-                sStat.sub += sheetSubs;
+                sStat.total += effectiveSheetTotal;
+                sStat.add += effSheetAdds;
+                sStat.sub += effSheetSubs;
             } else {
                 // Liability Target (Positive Balance = Debt)
                 if (sourceIsLiability) {
                     // Source is the Liability itself (CC Sheet)
                     // Expense (Negative Outflow) -> Increases Debt (Add)
                     // Payment (Positive Inflow) -> Decreases Debt (Sub)
-                    sStat.total -= sheetTotal; // Invert to make Exp positive
-                    sStat.add += (-sheetSubs); // Map Negs to Add
-                    sStat.sub += sheetAdds;    // Map Pos to Sub
+                    sStat.total -= effectiveSheetTotal; // Invert to make Exp positive
+                    sStat.add += (-effSheetSubs); // Map Negs to Add
+                    sStat.sub += effSheetAdds;    // Map Pos to Sub
                 } else {
                     // Source is External Asset (Bank Sheet) paying the Liability
                     // Payment (Negative Outflow) -> Decreases Debt (Sub)
                     // Refund (Positive Inflow) -> Increases Debt (Add)? (Rare, but logical)
-                    sStat.total += sheetTotal; // Direct (Neg reduces Debt)
-                    sStat.add += sheetAdds;    // Pos adds to Debt
-                    sStat.sub += sheetSubs;    // Neg subtracts from Debt
+                    sStat.total += effectiveSheetTotal; // Direct (Neg reduces Debt)
+                    sStat.add += effSheetAdds;    // Pos adds to Debt
+                    sStat.sub += effSheetSubs;    // Neg subtracts from Debt
                 }
             }
 
@@ -3060,8 +3132,12 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     // Incremented Version Logic
     const newVersion = incrementPackageVersion();
 
+    // Recover original input path directly from process.argv
+    const rawArgs = process.argv.slice(2);
+    const originalInputPath = rawArgs.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
+
     // Metadata Sheet
-    addMetadataSheet(wb, newVersion, filename, process.argv.slice(2).join(' '));
+    addMetadataSheet(wb, newVersion, originalInputPath, rawArgs.join(' '));
 
     await wb.xlsx.writeFile(newFilename);
     originalConsole.log(`[Saved] Report saved to: ${newFilename}`);
@@ -3070,7 +3146,7 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     // PDF Generation
     if (PDFDocument) {
         const pdfName = newFilename.replace(path.extname(newFilename), '.pdf');
-        await generatePDF(pdfName, reports, newVersion, filename);
+        await generatePDF(pdfName, reports, newVersion, originalInputPath);
     }
 
 }
@@ -3112,7 +3188,8 @@ function addMetadataSheet(wb, version, filename, command) {
 async function generatePDF(pdfPath, reports, version, xlsxFile) {
     return new Promise((resolve, reject) => {
         try {
-            const doc = new PDFDocument({ margin: 50 });
+            // PDF in Landscape for better table fitting
+            const doc = new PDFDocument({ margin: 40, layout: 'landscape' });
             const stream = fs.createWriteStream(pdfPath);
             doc.pipe(stream);
 
@@ -3123,18 +3200,17 @@ async function generatePDF(pdfPath, reports, version, xlsxFile) {
             doc.text(`Source: ${path.basename(xlsxFile)}`, { align: 'center' });
             doc.moveDown(2);
 
-            // Helper to print table
+            // Helper to print simple 2-col table
             const printTable = (title, rows, extractFunc) => {
                 doc.addPage();
                 doc.fontSize(18).text(title, { underline: true });
                 doc.moveDown();
-                doc.fontSize(10).font('Courier'); // Monospace for alignment
+                doc.fontSize(10).font('Courier');
 
                 if (!rows || rows.length === 0) {
                     doc.text('(No Data)');
                     return;
                 }
-
                 rows.forEach(row => {
                     const line = extractFunc(row);
                     doc.text(line);
@@ -3142,14 +3218,67 @@ async function generatePDF(pdfPath, reports, version, xlsxFile) {
                 doc.font('Helvetica');
             };
 
+            // Helper to print DETAILED 5-col table (Category | Open | Add | Sub | End)
+            const printDetailed = (title, rows) => {
+                doc.addPage();
+                doc.fontSize(18).text(title, { underline: true });
+                doc.moveDown();
+                doc.fontSize(9).font('Courier'); // Smaller font for width
+
+                if (!rows || rows.length === 0) {
+                    doc.text('(No Data)');
+                    return;
+                }
+
+                // Header
+                const h1 = "Category".padEnd(40);
+                const h2 = "Opening".padStart(15);
+                const h3 = "Additions".padStart(15);
+                const h4 = "Subtracts".padStart(15);
+                const h5 = "Ending".padStart(15);
+                doc.text(`${h1} ${h2} ${h3} ${h4} ${h5}`);
+                doc.text('-'.repeat(100));
+
+                rows.forEach(r => {
+                    const name = (r.label || '').substring(0, 38).padEnd(40);
+                    const open = (r.opening || 0).toFixed(2).padStart(15);
+                    const add = (r.add || 0).toFixed(2).padStart(15);
+                    const sub = (r.sub || 0).toFixed(2).padStart(15);
+                    const end = (r.value || 0).toFixed(2).padStart(15);
+                    doc.text(`${name} ${open} ${add} ${sub} ${end}`);
+                });
+                doc.font('Helvetica');
+            };
+
             // P&L
             if (reports.pl) {
-                printTable('Profit & Loss Summary', reports.pl, r => `${r.label.padEnd(50)} ${r.value.toFixed(2).padStart(15)}`);
+                printTable('Profit & Loss Summary', reports.pl, r => `${r.label.padEnd(60)} ${r.value.toFixed(2).padStart(20)}`);
+                const plTotal = reports.pl.reduce((s, x) => s + (x.value || 0), 0);
+                doc.font('Courier').fontSize(10);
+                doc.text('-'.repeat(85));
+                doc.font('Courier-Bold');
+                doc.text(`NET INCOME:`.padEnd(60) + plTotal.toFixed(2).padStart(20));
+                doc.font('Helvetica');
             }
 
-            // BS
+            // BS Summary
             if (reports.bs) {
-                printTable('Balance Sheet Summary', reports.bs, r => `${r.label.padEnd(50)} ${r.value.toFixed(2).padStart(15)}`);
+                printTable('Balance Sheet Summary', reports.bs, r => `${r.label.padEnd(60)} ${r.value.toFixed(2).padStart(20)}`);
+            }
+
+            // BS Detailed (Assets)
+            if (reports.assets) {
+                printDetailed('Assets (Detailed)', reports.assets);
+            }
+
+            // BS Detailed (Liabilities)
+            if (reports.liabilities) {
+                printDetailed('Liabilities (Detailed)', reports.liabilities);
+            }
+
+            // BS Detailed (Equity)
+            if (reports.equity) {
+                printDetailed('Equity (Detailed)', reports.equity);
             }
 
             // Vendor Summary
