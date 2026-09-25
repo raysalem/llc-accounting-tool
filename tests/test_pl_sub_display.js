@@ -1,7 +1,6 @@
 const { execSync } = require('child_process');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
-const assert = require('assert');
 // Test files live in a temp directory so test runs never modify the repo.
 const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
@@ -85,7 +84,6 @@ async function verifySubCatLogic() {
     // We need to be careful; "(No Sub-Cat)" exists for Cat_Mixed.
     // We check via regex or line proximity, or just ensure the output behaves generally.
     // Since "Cat_OnlyNoSub" is unique, let's look for the block.
-    const onlyNoSubBlock = output.split('\n').filter(l => l.includes('Cat_OnlyNoSub'))[0];
     // We unfortunately can't split blocks easily from raw text without parsing. 
     // However, if we look at the lines immediately following:
     const lines = output.split('\n');
@@ -125,7 +123,7 @@ async function verifySubCatLogic() {
     }
 
     // Cleanup
-    try { fs.unlinkSync(TEST_FILENAME); } catch (e) { }
+    fs.rmSync(TEST_FILENAME, { force: true });
 }
 
 verifySubCatLogic();

@@ -1,7 +1,6 @@
 const { execSync } = require('child_process');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
-const assert = require('assert');
 // Test files live in a temp directory so test runs never modify the repo.
 const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
@@ -54,7 +53,7 @@ async function testArguments() {
     run(`node load_transactions.js "${SRC_EXCEL}" bank "${TARGET_FILE}"`);
 
     // Verify 1 Row Added
-    let wb = new ExcelJS.Workbook();
+    const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(TARGET_FILE);
     let sheet = wb.getWorksheet('Bank Transactions');
     // Header is row 3 (default template offset), Data at 4. Row 1,2 are totals.
@@ -175,9 +174,7 @@ async function testArguments() {
     console.log('\n✅ TEST PASSED: All arguments covered and verified.');
 
     // Cleanup
-    try {
-        fs.rmSync(TMP_DIR, { recursive: true, force: true });
-    } catch (e) { }
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
 }
 
 testArguments().catch(err => {

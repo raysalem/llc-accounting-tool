@@ -72,7 +72,7 @@ async function createTestWorkbook() {
 
 function parseValue(line) {
     // Extract last number from line (e.g. "Investment ... 1,000.00")
-    const match = line.match(/([\d,\.-]+)$/);
+    const match = line.match(/([\d,.-]+)$/);
     return match ? parseFloat(match[1].replace(/,/g, '')) : null;
 }
 

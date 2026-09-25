@@ -52,14 +52,16 @@ Gaps, in priority order:
 - [ ] **Unit-test the calculation phases directly** (e.g. `buildReports`, `applySheetLinkage`) now that they are separate functions.
 - [ ] **Row processing is still one large closure** in `lib/report/transactions.js` (~370 lines) and `lib/report/ledger.js`. Splitting them further means rewriting them, not just moving code; do it with tests in place.
 - [ ] **Shared state:** phases share a mutable `ctx` object. Over time, have each phase return its results instead of writing into `ctx`.
-- [ ] **Dead code found during the split:** the 1099 section builds CSV text that is never written (`lib/report/print-1099.js`); `--save` fills a Summary sheet in the input workbook but never saves it (`lib/report/summary.js`); the end-balance check at the end of `lib/report/linkage.js` computes a difference it never uses. Either finish or remove each one. The "(Run with --save to update the Excel file)" hint is misleading: `--save` writes a separate report file.
+- [x] **Removed dead code:** the never-written 1099 CSV builder and the unused end-balance calculation in `linkage.js` (the real check is in `wallets.js`).
+- [ ] **`--save` fills a Summary sheet in the input workbook but never saves it** (`lib/report/summary.js`), and the "(Run with --save to update the Excel file)" hint is misleading: `--save` writes a separate `report_<name>.xlsx`. Decide: remove the Summary code and fix the hint, or actually save the Summary into the input workbook.
 - [ ] **Remove dead code and stale comments.** Examples: "REDUNDANT BLOCK REMOVED", "The previous logic here (Lines 713-732)", "TODO: Replace this with table-based reading once tables are created".
 - [ ] **Setup parsing picks columns by header name.** Duplicate names across tables (`Type`, `Category`) are resolved by "first" vs "last" occurrence, which is how the template bug happened. Prefer the formal Excel tables (`CompanyInfo`, `Categories`, `Vendor`, `Customer`, `SheetInfo`) that the code already looks for, and make the template create them.
 - [ ] **The fallback sheet configs** (used when Setup has none) assume header row 1, but `load_transactions.js` writes the header in row 3.
 - [ ] **The integrity checker ignores rows it can't read.** Rows with unparseable dates are skipped with a warning only under `--checker`. Consider always counting them as issues.
 - [ ] **Decide whether a `CRITICAL WARNING` should fail the run.** For example, a transfer category used on the wrong sheet prints a `CRITICAL WARNING` but `report.js` still exits 0.
-- [ ] **Add ESLint and a formatter** and run them in CI. `.cursorrules` bans magic numbers and implicit conversions, but nothing enforces it.
-- [ ] **Silent `catch (e) { }` blocks** (e.g. `generate_excel.js:102`, several in `report.js`) hide real failures. Log them at least under `--debug`.
+- [x] **ESLint** (`npm run lint`, `eslint.config.js`) runs in CI; the codebase passes with no errors. It fixed or removed ~50 issues, mostly unused variables and dead code.
+- [ ] **Formatter:** consider adding Prettier. Also consider stricter rules (e.g. `no-magic-numbers`) to enforce `.cursorrules`.
+- [x] **Silent errors:** a transaction or ledger row that throws is now always reported and fails the run (before, only under `--checker`). Empty `catch` blocks are gone; ESLint's `no-empty` rule keeps it that way.
 - [ ] **The CSV parser in `load_transactions.js`** is a regex. It doesn't unescape `""` inside quoted fields and breaks on newlines inside quotes. Use a small CSV library, or document the limits. (`.cursorrules` currently forbids `csv-parser`; revisit that rule.)
 - [ ] **`glob` is only used by `scripts/batch_run.js`**, and `pdfkit` is required at runtime. Check both are still needed and list them in `DEPENDENCIES.md`.
 - [ ] **1099-INT threshold** is `0` (reports all interest). The IRS threshold is generally $10. Decide which you want and document it.

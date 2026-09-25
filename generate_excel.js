@@ -99,7 +99,11 @@ async function createTemplate() {
     versionSheet.columns = [{ header: 'Property', width: 20 }, { header: 'Value', width: 50 }];
 
     let gitSha = 'N/A';
-    try { gitSha = execSync('git rev-parse HEAD').toString().trim(); } catch (e) { }
+    try {
+        gitSha = execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch (e) {
+        // Not a git checkout; keep 'N/A'
+    }
 
     versionSheet.addRow(['Version ID', pkg.version]);
     versionSheet.addRow(['Git SHA', gitSha]);

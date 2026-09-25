@@ -1,8 +1,6 @@
 const { execSync } = require('child_process');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
-const path = require('path');
-const assert = require('assert');
 // Test files live in a temp directory so test runs never modify the repo.
 const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
@@ -189,7 +187,7 @@ async function runTests() {
 
     // 8. 1099 Generation within Excel Report
     const reportFile = require('path').join(TMP_DIR, 'report_comprehensive_test_data.xlsx');
-    try { fs.unlinkSync(reportFile); } catch (e) { }
+    fs.rmSync(reportFile, { force: true });
     const out1099 = run(`node report.js "${TEST_FILE}" --year=2025 --1099 --save`, true);
     console.log(out1099); // Print full output for debugging
 
