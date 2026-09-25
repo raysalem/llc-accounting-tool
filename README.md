@@ -80,11 +80,20 @@ The tool validates every transaction during the report generation process:
 - **Reporting**: Issues are summarized in red at the bottom of the **Summary** tab and printed to the console.
 - **Deep Dive**: Use the `--checker` flag for specific row numbers and descriptions of every error.
 
+## Documentation
+
+- [`docs/setup.md`](docs/setup.md): how to fill in the Setup sheet
+- [`docs/accounting-rules.md`](docs/accounting-rules.md): tax-season checklist, 1099 prep, ledger entries, credit-card transfers
+- [`docs/features.md`](docs/features.md): every command and flag, with test coverage
+- [`docs/development.md`](docs/development.md): architecture, dependencies and coding standards
+- [`docs/testing.md`](docs/testing.md): test plan and expected numbers
+- [`todo.md`](todo.md): open work
+
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js 20 or newer
 - Microsoft Excel
 
 ### Installation
@@ -132,7 +141,7 @@ Both `load_transactions.js` and `report.js` read amounts such as `$1,234.56`, `(
 npm test
 ```
 
-This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to-end integration test and the feature tests) and exits non-zero if any fail. See `TESTING.md` for the test plan, the coverage map and the expected numbers.
+This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to-end integration test and the feature tests) and exits non-zero if any fail. See `docs/testing.md` for the test plan, the coverage map and the expected numbers.
 
 ## Keeping Personal Data Out of the Repo
 
@@ -172,7 +181,8 @@ Supporting code:
 | `lib/report/print-statements.js`, `print-1099.js`, `format-table.js`, `diagnostics.js` | Console output and final status |
 | `lib/report/summary.js`, `lib/output/` | `--save`: Excel report and PDF |
 | `scripts/` | Utilities: `batch_run.js` (run `report.js` on many workbooks), `inspect.js` (dump a workbook's setup) |
-| `tests/` | Test suite (`npm test`); see `TESTING.md` |
+| `tests/` | Test suite (`npm test`); see `docs/testing.md` |
+| `docs/` | Setup sheet reference, features, accounting rules, development guide, test plan |
 
 `report.js` runs the phases in order: setup → sheet config → external vendors → transactions → ledger → wallet check → build reports → print → diagnostics → save.
 

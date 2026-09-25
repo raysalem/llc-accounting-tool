@@ -10,13 +10,17 @@
 
 ### 🏗 Architecture
 - **Single Source of Truth**: The "Setup" sheet in `LLC_Accounting_Template.xlsx` configuration is immutable.
-- **Strict Headers**: Headers must be located on **Row 1**. Missing headers = Critical Error. Do not fuzzy-scan.
-- **Top-Level Constants**: All configuration thresholds (e.g., `THRESHOLD_1099_NEC`) must be defined as `const` at the file top-level.
+- **Setup Headers**: Setup tables are found by formal Excel table name, or else by header-row detection (see `docs/setup.md`). Missing required headers = Critical Error.
+- **Constants**: Tax-year and 1099 thresholds live in `lib/accounting.js` (`DEFAULT_TAX_YEAR`, `get1099Threshold`). Other thresholds must be named `const`s, not inline numbers.
+- **Layout**: `report.js` runs the phases in `lib/report/`; see `docs/development.md`.
 
 ### 🚫 Prohibited Patterns
 - **Magic Numbers**: No hardcoded integers in logic blocks. Extract to constants.
 - **Implicit Conversions**: Explicitly handle types (`null`, `undefined`, `string`).
 - **Signed Summation**: Never sum signed values (`-50` + `50`) in "Additions/Subtractions" visual reports. Use Magnitude (`Math.abs`).
+- **`parseFloat` on money**: Never. Use `parseAmount` from `lib/accounting.js` (it handles `$`, commas, `(x)` and `x-`; `parseFloat` silently turned `(50.00)` into 0 and `1,234.56` into 1).
+- **Swallowed errors**: Never catch an error without reporting it. A row error must be printed and fail the run (a silently caught typo once dropped vendor totals under `--details`).
+- **Personal data**: Never commit statements, reports or real names/paths. `scripts/check-sensitive.js` enforces this.
 
 ---
 
@@ -24,28 +28,30 @@
 *These rules govern how you (the AI) must operate.*
 
 ### 📚 Documentation & Testing Mandate
-**Every project must maintain these 5 pillars:**
-1.  `DEPENDENCIES.md`: List of external libs/tools.
-2.  `FEATURE_SET.md`: Official feature list + Test coverage status.
-3.  `USAGE.md` (or `run commands.md`): Practical usage guide/cheatsheet.
-4.  `README.md`: High-level overview and architecture.
-5.  `SETUP_REQUIREMENTS.md`: Strict Excel structure definition.
+**The project docs:**
+1.  `README.md`: Overview, usage and project layout.
+2.  `docs/features.md`: Official feature list + test coverage status.
+3.  `docs/setup.md`: Setup sheet structure.
+4.  `docs/development.md`: Architecture, dependencies and coding standards.
+5.  `docs/testing.md`: Test plan and expected numbers.
+6.  `docs/accounting-rules.md`: Tax-season procedure and bookkeeping rules.
+7.  `todo.md`: Open work.
 
 **Workflow Rule:**
 - **Pre-Code**: You MUST read/cross-check these docs before designing any change.
 - **Post-Code**: You MUST update these docs to reflect changes (new flags, removed features).
-- **Testing**: Every feature listed in `FEATURE_SET.md` MUST have a corresponding test verified.
+- **Testing**: Every feature listed in `docs/features.md` MUST have a corresponding test verified.
 
 ### 🔍 Verification Protocol
 1.  **Execute**: Run the code after every significant change.
 2.  **Read Stdout**: Verify the numbers in the output match the logic change.
 3.  **Check Scope**: Ensure new variables/constants are properly scoped and accessible.
-4.  **Docs = Golden for Planning**: Treat `SETUP_REQUIREMENTS.md` and `FEATURE_SET.md` as the authoritative source for planning. You should not need to read `report.js` to understand the *intent* or *features*, only implementation details.
+4.  **Docs = Golden for Planning**: Treat `docs/setup.md` and `docs/features.md` as the authoritative source for planning. You should not need to read `report.js` to understand the *intent* or *features*, only implementation details.
 5.  **Sync Requirement**: If you change code logic, you **MUST** update the Docs to match. The Docs must never drift from the Code.
 
 ### 🛡 QA & Regression
-- **Feature Set**: Consult `FEATURE_SET.md` before changes. Update it after changes.
-- **Test Suite**: Run `tests/run_integration_test.js` if modifying core logic.
+- **Feature Set**: Consult `docs/features.md` before changes. Update it after changes.
+- **Test Suite**: Run `npm run lint` and `npm test` before every commit.
 - **Lockfiles**: If `package.json` changes, run `npm install` immediately.
 
 ### 🧠 Post-Task Reflection

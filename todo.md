@@ -63,13 +63,18 @@ Gaps, in priority order:
 - [ ] **Formatter:** consider adding Prettier. Also consider stricter rules (e.g. `no-magic-numbers`) to enforce `.cursorrules`.
 - [x] **Silent errors:** a transaction or ledger row that throws is now always reported and fails the run (before, only under `--checker`). Empty `catch` blocks are gone; ESLint's `no-empty` rule keeps it that way.
 - [ ] **The CSV parser in `load_transactions.js`** is a regex. It doesn't unescape `""` inside quoted fields and breaks on newlines inside quotes. Use a small CSV library, or document the limits. (`.cursorrules` currently forbids `csv-parser`; revisit that rule.)
-- [ ] **`glob` is only used by `scripts/batch_run.js`**, and `pdfkit` is required at runtime. Check both are still needed and list them in `DEPENDENCIES.md`.
+- [x] **Dependencies documented** in `docs/development.md` (`exceljs`, optional `pdfkit`, `glob` for `scripts/batch_run.js`, ESLint for development).
 - [ ] **1099-INT threshold** is `0` (reports all interest). The IRS threshold is generally $10. Decide which you want and document it.
 - [ ] **Remember to update `DEFAULT_TAX_YEAR`** each January (or derive it from the current date minus one year during filing season).
 
+## Accounting (from the old FUTURE_TASKS.md)
+
+- [ ] **Exclude credit-card payments from 1099-NEC totals.** Payments made by credit card or through processors (PayPal, Upwork) are reported by the processor on a 1099-K, so they shouldn't count toward a vendor's 1099-NEC. Today all payments are added up, which can over-report. Only add rows from `Bank`-type sheets to the 1099 stats.
+- [ ] **Keep the hard stops.** Never loosen the checks that refuse to produce a report when the ledger is unbalanced, a ledger row has no date, or an account's calculated end balance doesn't match its End Balance.
+
 ## Repo hygiene
 
-- [ ] **Too many overlapping top-level docs:** `PROJECT_CONTEXT`, `FEATURE_SET`, `DEV_CHECKLIST`, `FUTURE_TASKS`, `SETUP_REQUIREMENTS`, `DEPENDENCIES`, `TESTING` and `ACCOUNTING_RULEBOOK`. Merge them into `README.md`, `docs/setup.md`, `docs/accounting-rules.md` and this file.
+- [x] **Docs consolidated** into `README.md` and `docs/` (`setup.md`, `features.md`, `accounting-rules.md`, `development.md`, `testing.md`), with stale content corrected. `FUTURE_TASKS.md` items moved into this file. `.cursorrules` points at the new docs.
 - [x] **One-off scripts moved to `scripts/`.** `fix_garbage.js` was deleted; it patched text in the old `report.js`.
 - [ ] **`scripts/monitor_booking.js`** checks a campsite-booking website and is unrelated to this tool. Consider moving it to its own repo.
 - [x] **Personal-data guard:** `scripts/check-sensitive.js` runs as a pre-commit hook (enabled by `npm install`) and in CI. `.gitignore` now also covers `*.csv`, `*.pdf`, `*.xls` and `*.lnk` outside `tests/`.

@@ -1,4 +1,4 @@
-# 2025 Tax Season Rule Book: LLC Accounting & 1099 Prep
+# Tax Season Rule Book: LLC Accounting & 1099 Prep
 
 **Objective**: Ensure financial records are accurate and complete for Jan 31st 1099 deadlines and annual tax filing.
 
@@ -15,7 +15,7 @@
 Go to the **Setup** tab in your Excel file. Ensure every person/business you paid is listed in the `Vendor` table.
 - **Vendor Name**: Must match exactly what is used in your transaction sheets.
 - **1099 Type**: Set to `NEC` for contractors/services, `INT` for interest, or leave blank/`NO`.
-    - *Rule of Thumb*: If you paid them > $600 in the calendar year for **services** (legal, labor, rent, repairs), they likely need a 1099-NEC.
+    - *Rule of Thumb*: If you paid them at least the threshold in the calendar year for **services** (legal, labor, rent, repairs), they likely need a 1099-NEC. The threshold is **$600** for payments made through 2025 and **$2,000** from 2026; the tool picks it from `--year`.
     - *Exceptions*: Generally, you do **not** send 1099s to C-Corps or S-Corps (unless legal/medical), or for physical goods/merchandise.
 - **1099 Required**: Set to `YES` if applicable.
 - **Details**: Fill in **Tax ID (SSN/EIN)**, **Address**, **Email**, **Phone**. *You cannot file without Tax ID and Address.*
@@ -23,7 +23,7 @@ Go to the **Setup** tab in your Excel file. Ensure every person/business you pai
 ### 1.2 The Credit Card Exception
 **Important**: You generally do **not** need to issue a 1099-NEC for payments made via **Credit Card** or third-party networks (PayPal, Upwork *if* they handle the 1099). The payment processor sends a 1099-K.
 - **Action**: If you paid a contractor *entirely* via Credit Card (recorded in your CC sheets), you technically do not need to file a 1099-NEC for those specific payments.
-- *Note*: The `report.js --1099` tool currently aggregates **ALL** spending. You may need to manually exclude CC portions if you are on the borderline of the $600 threshold.
+- *Note*: `report.js --1099` currently adds up **all** spending, including credit-card payments. If a vendor is near the threshold, manually exclude the credit-card portion.
 
 ### 1.3 W-9 Verification
 - **Rule**: If you do not have a W-9 on file for a vendor marked `NEC`/`INT`, Request it immediately.
@@ -37,7 +37,7 @@ Go to the **Setup** tab in your Excel file. Ensure every person/business you pai
 ### 2.1 Run the Checker
 Open your terminal and run:
 ```bash
-node report.js --checker
+node report.js My_Books.xlsx --checker --year=2025
 ```
 **Fix the following errors:**
 1.  **"Illegal Vendor"**: You used a vendor name in a transaction sheet (e.g., "Main St. Shell") that isn't in your Setup `Vendor` table.
@@ -49,10 +49,10 @@ node report.js --checker
 ### 2.2 Verify Vendor Spending
 Run the vendor report to see total "Net Expenses" per vendor:
 ```bash
-node report.js --vendor
+node report.js My_Books.xlsx --vendor --year=2025
 ```
 - **Review**: Look at the list.
-- **Question**: Are there any names with > $600 total that are **NOT** marked as [NEC] or [INT]?
+- **Question**: Are there any names at or over the threshold that are **NOT** marked as [NEC] or [INT]?
     -   If yes, double-check: Did they provide a service? Are they an individual/LLC? -> **Add to Setup table & Mark NEC**.
 
 ---
@@ -60,21 +60,21 @@ node report.js --vendor
 ## Part 3: Generate 1099 Data
 *Goal: Export the data for your CPA or E-File service (e.g., Track1099, Tax1099).*
 
-### 3.1 Generate CSVs
+### 3.1 Generate the 1099 Data
 Run:
 ```bash
-node report.js --1099
+node report.js My_Books.xlsx --1099 --save --year=2025
 ```
-This will generate files like `1099_NEC_Data.csv` in your folder.
+This prints the 1099 preparation summary and writes `report_My_Books.xlsx` (and a PDF) next to your workbook. The **1099 Data** sheet has one row per recipient with your payer details, the amount and the form type.
 
 ### 3.2 Final Review
-Open the generated CSVs:
+Open the **1099 Data** sheet:
 - Check **Payer Info**: Is your LLC info correct? (Edit `Setup` sheet "Payer Info" table if not).
 - Check **Amounts**: Do the totals look reasonable?
 - Check **Missing Info**: Are Address/Tax ID columns empty? -> **Go back to Step 1.1**.
 
 ### 3.3 Submission
-Send these CSVs + your W-9 PDFs to your CPA or upload to your filing provider.
+Send the 1099 Data sheet (save it as CSV if your provider needs that) and your W-9 PDFs to your CPA, or upload to your filing provider.
 
 ---
 
@@ -82,9 +82,9 @@ Send these CSVs + your W-9 PDFs to your CPA or upload to your filing provider.
 - [ ] Setup Sheet: Payer Info (Your LLC) is populated.
 - [ ] Setup Sheet: Vendor list is complete w/ Tax IDs.
 - [ ] Setup Sheet: 1099 flags (NEC/INT) are set for eligible vendors.
-- [ ] Terminal: `node report.js --checker` returns clean (no illegal vendors).
-- [ ] Terminal: `node report.js --vendor` review completed (caught missed contractors).
-- [ ] Terminal: `node report.js --1099` outputs valid CSVs.
+- [ ] Terminal: `node report.js <file> --checker --year=YYYY` returns clean (no illegal vendors).
+- [ ] Terminal: `node report.js <file> --vendor --year=YYYY` review completed (caught missed contractors).
+- [ ] Terminal: `node report.js <file> --1099 --save --year=YYYY` produces a complete **1099 Data** sheet.
 
 ---
 

@@ -1,4 +1,4 @@
-// Automates the three scenarios in TESTING.md:
+// Automates the three transfer scenarios in docs/testing.md:
 //   1. Credit card payment is not double counted
 //   2. Refunds reduce expense and liability; payments are excluded from linkage
 //   3. A transfer category used on the wrong sheet raises a warning
