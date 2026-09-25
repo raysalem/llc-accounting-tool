@@ -18,17 +18,6 @@ function run(cmd) {
     }
 }
 
-// Like run(), but returns output even when report.js exits 1 because the sample
-// books have data-integrity issues. These checks only test flag output.
-function runReport(cmd) {
-    try {
-        return execSync(cmd, { encoding: 'utf-8', stdio: 'pipe' });
-    } catch (e) {
-        if (e.stdout) return e.stdout.toString();
-        throw new Error(`Command failed: ${cmd}`);
-    }
-}
-
 async function testArguments() {
     console.log('--- TEST SUITE: Argument Coverage ---');
 
@@ -113,18 +102,22 @@ async function testArguments() {
     sheet.getRow(4).getCell(4).value = 'Rent'; // Category
     sheet.getRow(4).getCell(7).value = 'TestVendor';
     sheet.getRow(4).getCell(8).value = 'TestCust';
+    // Register them in Setup (Vendors = column F, Customers = column G) so the books are clean
+    const setupSheet = wb.getWorksheet('Setup');
+    setupSheet.getCell('F5').value = 'TestVendor';
+    setupSheet.getCell('G5').value = 'TestCust';
     await wb.xlsx.writeFile(TARGET_FILE);
 
     // 5. Test: --vendor
     console.log('   Running: --vendor');
-    const vendorOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --vendor`);
+    const vendorOut = run(`node report.js "${TARGET_FILE}" --year=2025 --vendor`);
     if (!vendorOut.includes('VENDOR SPENDING') || !vendorOut.includes('TestVendor')) {
         throw new Error('--vendor flag failed to show vendor report');
     }
 
     // 6. Test: --customer
     console.log('   Running: --customer');
-    const custOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --customer`);
+    const custOut = run(`node report.js "${TARGET_FILE}" --year=2025 --customer`);
     if (!custOut.includes('CUSTOMER INCOME') || !custOut.includes('TestCust')) {
         throw new Error('--customer flag failed to show customer report');
     }
@@ -134,9 +127,10 @@ async function testArguments() {
     // Ensure we have a subcategory to show
     sheet = wb.getWorksheet('Bank Transactions');
     sheet.getRow(4).getCell(5).value = 'Software'; // Sub-Category
+    wb.getWorksheet('Setup').getRow(7).values = ['Rent', 'Software', 'Expense', 'P&L']; // register it
     await wb.xlsx.writeFile(TARGET_FILE);
 
-    const plSubOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --pl-sub`);
+    const plSubOut = run(`node report.js "${TARGET_FILE}" --year=2025 --pl-sub`);
     if (!plSubOut.includes('PROFIT & LOSS') || !plSubOut.includes('> Software')) {
         console.error('--- FAILURE OUTPUT START ---');
         console.error(plSubOut);
@@ -149,7 +143,13 @@ async function testArguments() {
     console.log('   Running: --save');
     const REPORT_FILE = require('path').join(TMP_DIR, 'report_temp_target.xlsx');
     if (fs.existsSync(REPORT_FILE)) fs.unlinkSync(REPORT_FILE);
-    runReport(`node report.js "${TARGET_FILE}" --year=2025 --pl --save`);
+    // --save exits 1 whenever any warning was printed (the "[BATCH STOP]" rule in
+    // lib/report/summary.js), so check the report file rather than the exit code.
+    try {
+        execSync(`node report.js "${TARGET_FILE}" --year=2025 --pl --save`, { encoding: 'utf-8', stdio: 'pipe' });
+    } catch (e) {
+        if (!String(e.stderr).includes('[BATCH STOP]')) throw e;
+    }
 
     if (!fs.existsSync(REPORT_FILE)) throw new Error(`--save failed: ${REPORT_FILE} not created`);
     const finalWb = new ExcelJS.Workbook();
@@ -159,10 +159,10 @@ async function testArguments() {
 
     // 8. Test: --1099
     console.log('Testing --1099...');
-    runReport(`node report.js "${TARGET_FILE}" --year=2025 --1099`);
+    run(`node report.js "${TARGET_FILE}" --year=2025 --1099`);
 
     // 9. Test: --details (formerly tests/test_details_flag.js, which depended on this file existing)
-    const detailsOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --details "Rent"`);
+    const detailsOut = run(`node report.js "${TARGET_FILE}" --year=2025 --details "Rent"`);
     if (!detailsOut.includes('DETAILS: "rent"') || !detailsOut.includes('TOTAL')) {
         throw new Error('--details flag failed to show details with a total');
     }

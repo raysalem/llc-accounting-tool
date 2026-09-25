@@ -10,13 +10,16 @@ async function verifySubCatLogic() {
     console.log('--- Setting up Test for P&L Sub-Category Logic ---');
     const workbook = new ExcelJS.Workbook();
 
-    // 1. Setup Sheet
+    // 1. Setup Sheet (sub-categories listed; the bank sheet feeds Checking, so the books balance)
     const setup = workbook.addWorksheet('Setup');
-    setup.columns = [{ header: 'Category', key: 'cat' }, { header: 'Account Type', key: 'type' }, { header: 'Report', key: 'rep' }, { header: 'Report Type', key: 'rtype' }];
-    setup.addRow(['Cat_Multi', 'Expense', '', 'P&L']);
-    setup.addRow(['Cat_OnlyNoSub', 'Expense', '', 'P&L']);
-    setup.addRow(['Cat_Mixed', 'Expense', '', 'P&L']);
-    setup.addRow(['Cat_SingleReal', 'Expense', '', 'P&L']);
+    setup.addRow(['Category', 'Sub-Category', 'Account Type', 'Report', 'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset']);
+    setup.addRow(['Cat_Multi', 'SubA', 'Expense', 'P&L', 'Bank Transactions', 'Bank', 'No', 1, 'Checking']);
+    setup.addRow(['Cat_Multi', 'SubB', 'Expense', 'P&L']);
+    setup.addRow(['Cat_OnlyNoSub', '', 'Expense', 'P&L']);
+    setup.addRow(['Cat_Mixed', 'SubC', 'Expense', 'P&L']);
+    setup.addRow(['Cat_SingleReal', 'SpecialProject', 'Expense', 'P&L']);
+    setup.addRow(['Checking', '', 'Asset', 'Balance Sheet']);
+    setup.addRow(['Owner Equity', '', 'Equity', 'Balance Sheet']);
 
     // 1.5. Ledger Sheet (Mandatory)
     const ledger = workbook.addWorksheet('Ledger');
@@ -34,6 +37,8 @@ async function verifySubCatLogic() {
 
     // Transaction Data
     const rows = [
+        ['2025-01-01', 'Owner deposit', 2000, 'Owner Equity', ''],
+
         // Case: Multi (Should show all)
         ['2025-01-01', 'Multi 1', -100, 'Cat_Multi', 'SubA'],
         ['2025-01-01', 'Multi 2', -200, 'Cat_Multi', 'SubB'],
@@ -55,14 +60,11 @@ async function verifySubCatLogic() {
     console.log('--- Running report.js --pl-sub ---');
     let output = '';
     try {
+        // The sample books balance, so report.js must exit 0.
         output = execSync(`node report.js "${TEST_FILENAME}" --year=2025 --pl-sub`, { encoding: 'utf-8' });
     } catch (e) {
-        // report.js exits 1 because these sample books do not balance; this test only checks --pl-sub output.
-        if (!e.stdout || e.stdout.includes('[CRITICAL ERROR]')) {
-            console.error('Execution Failed:', e.stdout);
-            process.exit(1);
-        }
-        output = e.stdout.toString();
+        console.error(`Execution Failed (exit ${e.status}):`, e.stdout);
+        process.exit(1);
     }
 
     console.log('--- Analyzing Output ---');

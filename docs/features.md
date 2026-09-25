@@ -28,10 +28,10 @@ Every feature listed here should have a test. Gaps are marked ⚠️ and tracked
 | `--details "Name"` | Every row for a category, vendor or customer, including Ledger rows. | `test_details_extended.js`, `test_details_ledger.js`, `test_arguments_coverage.js` |
 | `--checker` | Data-integrity report: missing categories, unknown categories/vendors/customers, header problems. | `run_integration_test.js`, `test_comprehensive_report.js` |
 | `--save` | Writes `report_<name>.xlsx` (one sheet per report, 1099 Data, Processing Log, Report Info) and a PDF next to the workbook. Does not modify the workbook. | `test_arguments_coverage.js`, `test_comprehensive_report.js` |
-| `--all` | All reports. | ⚠️ no dedicated test |
-| `--vendor-file <path>` | Use a specific `vendor.xlsx` / `vendor.csv` for 1099 details. | ⚠️ no test |
-| `--ignore-vendors` | Don't load `vendor.xlsx` / `vendor.csv`. | ⚠️ no test |
-| `--debug` | Verbose output. | ⚠️ no test |
+| `--all` | All reports. | `test_vendor_file.js` |
+| `--vendor-file <path>` | Use a specific `vendor.xlsx` / `vendor.csv` for 1099 details. Without it, `vendor.xlsx` / `vendor.csv` next to the workbook (or in the current directory) is used. | `test_vendor_file.js` |
+| `--ignore-vendors` | Don't load `vendor.xlsx` / `vendor.csv`. | `test_vendor_file.js` |
+| `--debug` | Verbose output. | `test_vendor_file.js` |
 | `--help` | Usage. | `test_arguments_coverage.js` |
 
 **Exit code:** `report.js` exits 1 on critical errors (unbalanced ledger or balance sheet, a ledger row without a date, incomplete 1099 vendor details, a row that fails to process) or data-integrity issues. Otherwise 0.

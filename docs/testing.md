@@ -6,7 +6,7 @@ npm test
 ```
 `tests/run_all.js` runs every test file and exits non-zero if any fail. CI runs it on every push and pull request to `main` (Node 20 and 22).
 
-Tests write their workbooks to a temporary directory, so a test run never changes files in the repo. To refresh the committed example `tests/Full_Accounting_Test_Case.xlsx`, run `SAVE_ARTIFACT=1 node tests/run_integration_test.js`.
+All sample books balance, so tests expect `report.js` to exit 0 unless they are testing an error. Tests write their workbooks to a temporary directory, so a test run never changes files in the repo. To refresh the committed example `tests/Full_Accounting_Test_Case.xlsx`, run `SAVE_ARTIFACT=1 node tests/run_integration_test.js`.
 
 ## Coverage Map
 
@@ -25,6 +25,7 @@ Tests write their workbooks to a temporary directory, so a test run never change
 | Reports | `--pl-sub`, `--bs-sub`, `--vendor-sub`, `--customer-sub`, `--details` | `test_comprehensive_report.js`, `test_details_extended.js`, `test_pl_sub_display.js` |
 | Reports | `--details` includes Ledger rows and doesn't change totals | `test_details_ledger.js` |
 | CLI | `load_transactions.js` append / `--clear` / `--help`; `report.js` flags and `--save` | `test_arguments_coverage.js` |
+| CLI | `--vendor-file`, `vendor.csv` next to the workbook, `--ignore-vendors`, `--all`, `--debug` | `test_vendor_file.js` |
 
 ## Integration Test (`run_integration_test.js`)
 
@@ -74,6 +75,6 @@ Tests write their workbooks to a temporary directory, so a test run never change
 
 ## Known Gaps
 
-- **Unbalanced sample books**: several feature tests (`test_1099_threshold`, `test_details_extended`, `test_pl_sub_display`, `test_arguments_coverage`) use sample books that don't balance, so they ignore `report.js`'s exit code. Giving them balanced books would let them assert exit 0.
+- **`--save` exit code**: `--save` exits 1 whenever any warning was printed (even harmless ones such as "no vendor.xlsx found"), unlike runs without `--save`. `test_arguments_coverage.js` checks the saved file instead of the exit code for that step.
 - **Word-only checks**: some older checks only look for a word in the output. New tests should assert the number on the same line.
 - **Warnings don't change the exit code**: a `CRITICAL WARNING` (e.g. a transfer category on the wrong sheet) doesn't make `report.js` exit non-zero. Only errors and integrity issues do.

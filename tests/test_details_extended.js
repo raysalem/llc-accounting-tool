@@ -23,6 +23,9 @@ async function createTestWorkbook() {
     const setup = wb.addWorksheet('Setup');
     setup.getRow(1).values = ['Category', '', 'Type', 'Report', '', '', 'Vendors', '', 'Customers'];
     setup.getRow(2).values = ['DetailsCat', '', 'Expense', 'P&L'];
+    setup.getRow(3).values = ['OtherExpense', '', 'Expense', 'P&L'];
+    setup.getRow(4).values = ['OtherIncome', '', 'Income', 'P&L'];
+    setup.getRow(5).values = ['Bank', '', 'Asset', 'Balance Sheet']; // account the Bank sheet links to
     setup.getRow(2).getCell(7).value = 'DetailsVendor';
     setup.getRow(2).getCell(9).value = 'DetailsCustomer';
 
@@ -46,9 +49,9 @@ async function createTestWorkbook() {
     // Row 2: Match Category Only
     bank.getRow(2).values = ['2025-01-01', 'Cat trans', -10, 'DetailsCat', '', '', '', ''];
     // Row 3: Match Vendor Only
-    bank.getRow(3).values = ['2025-01-02', 'Vendor trans', -20, 'OtherCat', '', '', 'DetailsVendor', ''];
+    bank.getRow(3).values = ['2025-01-02', 'Vendor trans', -20, 'OtherExpense', '', '', 'DetailsVendor', ''];
     // Row 4: Match Customer Only
-    bank.getRow(4).values = ['2025-01-03', 'Cust trans', 30, 'OtherCat', '', '', '', 'DetailsCustomer'];
+    bank.getRow(4).values = ['2025-01-03', 'Cust trans', 30, 'OtherIncome', '', '', '', 'DetailsCustomer'];
 
     await wb.xlsx.writeFile(testFile);
 }
@@ -56,17 +59,11 @@ async function createTestWorkbook() {
 function runCheck(filter, expectedDesc, label) {
     console.log(`\nChecking --details "${filter}"...`);
     try {
-        // report.js exits 1 when the sample books have errors; this test only checks --details output.
-        let output;
-        try {
-            output = execSync(`node report.js "${testFile}" --year=2025 --details "${filter}"`, {
-                cwd: path.join(__dirname, '..'), // Run from root
-                encoding: 'utf8'
-            });
-        } catch (e) {
-            if (!e.stdout) throw e;
-            output = e.stdout.toString();
-        }
+        // The sample books balance, so report.js must exit 0 (execSync throws otherwise).
+        const output = execSync(`node report.js "${testFile}" --year=2025 --details "${filter}"`, {
+            cwd: path.join(__dirname, '..'), // Run from root
+            encoding: 'utf8'
+        });
 
         if (output.includes(expectedDesc)) {
             console.log(`✓ PASS: Found "${expectedDesc}" when filtering by ${label}`);

@@ -42,7 +42,9 @@ Gaps, in priority order:
 - [x] **Tests write to `os.tmpdir()`.** A full `npm test` leaves no files in the repo.
 - [x] **`tests/Full_Accounting_Test_Case.xlsx`** is only refreshed with `SAVE_ARTIFACT=1`.
 - [x] **One test plan.** `TESTING.md` now has a coverage map (scenario → test file) and the expected numbers. `tests/EXPECTED_OUTCOME.md` was merged into it.
-- [ ] **Most older feature tests build sample books that don't balance**, so they have to ignore `report.js`'s exit code: `test_1099_threshold`, `test_details_extended`, `test_pl_sub_display` and `test_arguments_coverage`. Give them balanced fixtures so they can assert exit 0, which would catch new errors.
+- [x] **All sample books balance** and the tests expect exit 0 (except the `--save` step; see below).
+- [x] **Tests for `--vendor-file`, `--ignore-vendors`, `--all`, `--debug`** (`tests/test_vendor_file.js`).
+- [ ] **Decide the `--save` exit code.** `--save` exits 1 if any warning was printed ("[BATCH STOP]" in `lib/report/summary.js`), even harmless ones like "no vendor.xlsx found"; without `--save`, only errors and integrity issues fail the run. Make them consistent, or document why batch runs need the stricter rule.
 - [ ] **Many older checks look for a word in the console output** (e.g. `includes('TestVendor')`). Where possible, assert the number on the same line (see `valueFor()` in `test_transfers.js`), or read the saved `report_*.xlsx`.
 
 ## Code

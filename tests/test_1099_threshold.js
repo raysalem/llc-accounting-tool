@@ -25,10 +25,16 @@ async function createTestWorkbook() {
 
     // Setup sheet
     const setup = wb.addWorksheet('Setup');
-    setup.getRow(1).values = ['Category', 'Sub-Category', 'Type', 'Report', '', '', 'Vendors', '1099', 'Customers'];
+    setup.getRow(1).values = ['Category', 'Sub-Category', 'Type', 'Report', '', '', 'Vendors', '1099', 'Customers',
+        'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset'];
 
     // Categories
     setup.getRow(2).values = ['Services', '', 'Expense', 'P&L'];
+    setup.getRow(3).values = ['Checking', '', 'Asset', 'Balance Sheet'];
+    setup.getRow(4).values = ['Owner Equity', '', 'Equity', 'Balance Sheet'];
+
+    // Sheet config: the bank sheet feeds the Checking account, so the books balance
+    ['Bank Transactions', 'Bank', 'No', 1, 'Checking'].forEach((v, i) => { setup.getRow(2).getCell(10 + i).value = v; });
 
     // Vendors with 1099 status
     setup.getRow(2).getCell(7).value = 'Vendor A'; // Will pay $700 (NEC, should be required)
@@ -51,6 +57,7 @@ async function createTestWorkbook() {
     const bank = wb.addWorksheet('Bank Transactions');
     bank.getRow(1).values = ['Date', 'Description', 'Amount', 'Category', 'Vendor'];
     bank.getRow(2).values = ['2025-01-15', 'Payment to A', -700, 'Services', 'Vendor A'];
+    bank.getRow(6).values = ['2025-01-02', 'Owner deposit', 2000, 'Owner Equity', ''];
     bank.getRow(3).values = ['2025-01-16', 'Payment to B', -500, 'Services', 'Vendor B'];
     bank.getRow(4).values = ['2025-01-17', 'Interest to C', -100, 'Services', 'Vendor C'];
     bank.getRow(5).values = ['2025-01-18', 'Zero payment D', 0, 'Services', 'Vendor D'];
@@ -66,17 +73,11 @@ async function runTest() {
 
         // Run report
         console.log('\nRunning vendor report...\n');
-        // report.js exits 1 when the sample books do not balance; this test only checks vendor output.
-        let output;
-        try {
-            output = execSync(`node report.js "${testFile}" --year=2025 --vendor`, {
-                cwd: path.join(__dirname, '..'),
-                encoding: 'utf8'
-            });
-        } catch (e) {
-            if (!e.stdout) throw e;
-            output = e.stdout.toString();
-        }
+        // The sample books balance, so report.js must exit 0 (execSync throws otherwise).
+        const output = execSync(`node report.js "${testFile}" --year=2025 --vendor`, {
+            cwd: path.join(__dirname, '..'),
+            encoding: 'utf8'
+        });
 
         console.log(output);
 
