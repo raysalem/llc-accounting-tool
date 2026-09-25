@@ -2,8 +2,10 @@ const { execSync } = require('child_process');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const assert = require('assert');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
-const TEST_FILENAME = 'Temp_SubCat_Test.xlsx';
+const TEST_FILENAME = require('path').join(TMP_DIR, 'Temp_SubCat_Test.xlsx');
 
 async function verifySubCatLogic() {
     console.log('--- Setting up Test for P&L Sub-Category Logic ---');

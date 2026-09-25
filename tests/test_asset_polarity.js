@@ -22,8 +22,10 @@ const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const ExcelJS = require('exceljs');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
-const testFile = path.join(__dirname, 'Test_Asset_Polarity.xlsx');
+const testFile = path.join(TMP_DIR, 'Test_Asset_Polarity.xlsx');
 
 async function createTestWorkbook() {
     const wb = new ExcelJS.Workbook();
@@ -82,7 +84,7 @@ async function runTest() {
             cwd: path.join(__dirname, '..'),
             encoding: 'utf8'
         });
-        fs.writeFileSync(path.join(__dirname, 'debug_polarity.txt'), output);
+        fs.writeFileSync(path.join(TMP_DIR, 'debug_polarity.txt'), output);
 
         const lines = output.split('\n');
         console.log("DEBUG OUTPUT:\n", output);

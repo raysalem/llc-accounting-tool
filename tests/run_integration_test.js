@@ -1,8 +1,10 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const ExcelJS = require('exceljs');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
-const TEST_FILE = 'Test_Accounting.xlsx';
+const TEST_FILE = require('path').join(TMP_DIR, 'Test_Accounting.xlsx');
 let failures = 0;
 
 function assertIncludes(output, text, label) {
@@ -18,7 +20,7 @@ function assertIncludes(output, text, label) {
 // assert on both the numbers and the exit code.
 function runReport(args) {
     try {
-        const output = execSync(`node report.js ${TEST_FILE} ${args}`, { encoding: 'utf-8', stdio: 'pipe' });
+        const output = execSync(`node report.js "${TEST_FILE}" ${args}`, { encoding: 'utf-8', stdio: 'pipe' });
         return { code: 0, output };
     } catch (e) {
         return { code: e.status, output: (e.stdout || '').toString() + (e.stderr || '').toString() };
@@ -27,14 +29,13 @@ function runReport(args) {
 
 async function runTest() {
     console.log('--- Phase 1: Initialize Template ---');
-    execSync('node generate_excel.js', { stdio: 'inherit' });
-    fs.renameSync('LLC_Accounting_Template.xlsx', TEST_FILE);
+    execSync(`node generate_excel.js "${TEST_FILE}"`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 2: Load Bank Transactions ---');
-    execSync(`node load_transactions.js tests/example_bank.csv bank ${TEST_FILE} --clear`, { stdio: 'inherit' });
+    execSync(`node load_transactions.js tests/example_bank.csv bank "${TEST_FILE}" --clear`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 3: Load CC Transactions ---');
-    execSync(`node load_transactions.js tests/example_cc.csv cc ${TEST_FILE} --clear`, { stdio: 'inherit' });
+    execSync(`node load_transactions.js tests/example_cc.csv cc "${TEST_FILE}" --clear`, { stdio: 'inherit' });
 
     console.log('\n--- Phase 4: Categorize Transactions (Simulated) ---');
     const workbook = new ExcelJS.Workbook();
@@ -133,7 +134,12 @@ async function runTest() {
     assertIncludes(dirty.output, 'Uncategorized Expense', 'Missing category flagged');
 
     console.log('\n--- Phase 9: Save Test Artifact ---');
-    fs.copyFileSync(TEST_FILE, 'tests/Full_Accounting_Test_Case.xlsx');
+    // Only refresh the committed artifact when asked, so test runs don't modify the repo.
+    if (process.env.SAVE_ARTIFACT) {
+        fs.copyFileSync(TEST_FILE, 'tests/Full_Accounting_Test_Case.xlsx');
+        console.log('Saved tests/Full_Accounting_Test_Case.xlsx');
+    }
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
 
     if (failures > 0) {
         console.error(`\n${failures} assertion(s) failed.`);

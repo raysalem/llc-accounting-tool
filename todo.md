@@ -34,16 +34,16 @@ What the suite covers well now: the end-to-end numbers (P&L, balance sheet, A = 
 
 Gaps, in priority order:
 
-- [ ] **Transfers and credit-card payments aren't tested at all.** The three scenarios in `TESTING.md` are manual only: CC payment double counting, refunds vs payments, and using a transfer category on the wrong sheet. Double counting a CC payment is the most likely silent error in this domain. Turn each one into an automated test with exact expected balances.
-- [ ] **Add a year-boundary test.** Put rows on Dec 31 and Jan 1 in both ISO and US formats, load them through `load_transactions.js`, and check which year each lands in.
-- [ ] **Add an end-to-end amount-format test.** Load a CSV containing `$1,234.56`, `(50.00)` and `1,000.00-` and check the resulting totals, not just the parser.
-- [ ] **Test that a balanced ledger with a missing date stops the run** (strictness), and separately that an unbalanced ledger stops it too.
-- [ ] **Add a 1099 test at exactly the threshold** ($600.00 in 2025, $2,000.00 in 2026) and one just under, including refunds that bring a vendor below the threshold.
-- [ ] **Most feature tests build sample books that don't balance**, so they have to ignore `report.js`'s exit code. Give them balanced fixtures so they can assert exit 0, which would catch new errors.
-- [ ] **Many checks look for a word in the console output** (e.g. `includes('TestVendor')`). Where possible, assert the number on the same line, or read the saved `report_*.xlsx`.
-- [ ] **Tests write files into the repo root and `tests/`** (`Test_Accounting.xlsx`, `Temp_SubCat_Test.xlsx`, `report_*`). Write them to `os.tmpdir()` so parallel runs and dirty working trees can't affect results.
-- [ ] **`tests/Full_Accounting_Test_Case.xlsx` is rewritten on every run** and shows up as changed in git. Either stop committing it or stop regenerating it.
-- [ ] **`TESTING.md` and `tests/EXPECTED_OUTCOME.md` overlap.** Merge them into a single test plan that lists each scenario, its expected numbers and which test file covers it.
+- [x] **Transfers and credit-card payments.** `tests/test_transfers.js` automates the three `TESTING.md` scenarios with exact balances. The logic was already correct: the payment is counted once, refunds reduce the expense and the liability, and a transfer category on the wrong sheet raises a warning.
+- [x] **Year-boundary test.** `tests/test_loader_formats.js` loads Dec 31 / Jan 1 rows in ISO and US formats under UTC, Los Angeles and Tokyo time zones. Against the old loader it fails: a Jan 1, 2026 charge landed in 2025 on a machine set to Tokyo time.
+- [x] **End-to-end amount formats.** The same test loads `$1,234.56`, `(50.00)`, `1,000.00-` and `25`. The old loader turned `(50.00)` into 0 and `1,000.00-` into +1,000.
+- [x] **Ledger stops.** `test_ledger_strictness.js` covers a missing date; `test_ledger_unbalanced.js` covers an unbalanced ledger (and that a balanced one passes).
+- [x] **1099 boundaries.** `tests/test_1099_boundaries.js` covers $600.00 and $599.99 in 2025, a $700 payment with a $150 refund, $600 in 2026, and $2,000.00 and $1,999.99 in 2026.
+- [x] **Tests write to `os.tmpdir()`.** A full `npm test` leaves no files in the repo.
+- [x] **`tests/Full_Accounting_Test_Case.xlsx`** is only refreshed with `SAVE_ARTIFACT=1`.
+- [x] **One test plan.** `TESTING.md` now has a coverage map (scenario → test file) and the expected numbers. `tests/EXPECTED_OUTCOME.md` was merged into it.
+- [ ] **Most older feature tests build sample books that don't balance**, so they have to ignore `report.js`'s exit code: `test_1099_threshold`, `test_details_extended`, `test_pl_sub_display` and `test_arguments_coverage`. Give them balanced fixtures so they can assert exit 0, which would catch new errors.
+- [ ] **Many older checks look for a word in the console output** (e.g. `includes('TestVendor')`). Where possible, assert the number on the same line (see `valueFor()` in `test_transfers.js`), or read the saved `report_*.xlsx`.
 
 ## Code
 
@@ -52,6 +52,7 @@ Gaps, in priority order:
 - [ ] **Setup parsing picks columns by header name.** Duplicate names across tables (`Type`, `Category`) are resolved by "first" vs "last" occurrence, which is how the template bug happened. Prefer the formal Excel tables (`CompanyInfo`, `Categories`, `Vendor`, `Customer`, `SheetInfo`) that the code already looks for, and make the template create them.
 - [ ] **The fallback sheet configs** (used when Setup has none) assume header row 1, but `load_transactions.js` writes the header in row 3.
 - [ ] **The integrity checker ignores rows it can't read.** Rows with unparseable dates are skipped with a warning only under `--checker`. Consider always counting them as issues.
+- [ ] **Decide whether a `CRITICAL WARNING` should fail the run.** For example, a transfer category used on the wrong sheet prints a `CRITICAL WARNING` but `report.js` still exits 0.
 - [ ] **Add ESLint and a formatter** and run them in CI. `.cursorrules` bans magic numbers and implicit conversions, but nothing enforces it.
 - [ ] **Silent `catch (e) { }` blocks** (e.g. `generate_excel.js:102`, several in `report.js`) hide real failures. Log them at least under `--debug`.
 - [ ] **The CSV parser in `load_transactions.js`** is a regex. It doesn't unescape `""` inside quoted fields and breaks on newlines inside quotes. Use a small CSV library, or document the limits. (`.cursorrules` currently forbids `csv-parser`; revisit that rule.)

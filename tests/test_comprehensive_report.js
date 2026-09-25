@@ -3,8 +3,10 @@ const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
-const TEST_FILE = 'tests/comprehensive_test_data.xlsx';
+const TEST_FILE = require('path').join(TMP_DIR, 'comprehensive_test_data.xlsx');
 
 function run(cmd, allowPartialFailure = false) {
     try {
@@ -186,7 +188,7 @@ async function runTests() {
     check('Details Flag', detailOut, ['DETAILS: "sales"', 'Client Payment', '5000.00']);
 
     // 8. 1099 Generation within Excel Report
-    const reportFile = 'tests/report_comprehensive_test_data.xlsx';
+    const reportFile = require('path').join(TMP_DIR, 'report_comprehensive_test_data.xlsx');
     try { fs.unlinkSync(reportFile); } catch (e) { }
     const out1099 = run(`node report.js "${TEST_FILE}" --year=2025 --1099 --save`, true);
     console.log(out1099); // Print full output for debugging

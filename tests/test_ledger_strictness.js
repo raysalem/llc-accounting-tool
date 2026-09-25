@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const ExcelJS = require('exceljs');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
 // Test: Ledger Strictness (Hard Fail on Missing Date)
 // 1. Create a dummy Excel file with a bad ledger row (Missing Date).
@@ -9,7 +11,7 @@ const ExcelJS = require('exceljs');
 // 3. Functional Success: Exit Code 1 (Crash).
 // 4. Verification: Check output for "[CRITICAL ERROR]" message.
 
-const TEST_FILE = path.join(__dirname, 'temp_ledger_strictness.xlsx');
+const TEST_FILE = path.join(TMP_DIR, 'temp_ledger_strictness.xlsx');
 
 async function createTestFile() {
     const workbook = new ExcelJS.Workbook();

@@ -2,9 +2,11 @@ const { execSync } = require('child_process');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const assert = require('assert');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
-const SRC_EXCEL = 'tests/temp_src.xlsx';
-const TARGET_FILE = 'tests/temp_target.xlsx';
+const SRC_EXCEL = require('path').join(TMP_DIR, 'temp_src.xlsx');
+const TARGET_FILE = require('path').join(TMP_DIR, 'temp_target.xlsx');
 
 function run(cmd) {
     try {
@@ -40,9 +42,7 @@ async function testArguments() {
     await srcWorkbook.xlsx.writeFile(SRC_EXCEL);
 
     // 2. Target Template (Clean Slate)
-    run('node generate_excel.js');
-    if (fs.existsSync(TARGET_FILE)) fs.unlinkSync(TARGET_FILE);
-    fs.renameSync('LLC_Accounting_Template.xlsx', TARGET_FILE);
+    run(`node generate_excel.js "${TARGET_FILE}"`);
 
     // =========================================================================
     // PART 1: load_transactions.js Coverage
@@ -148,7 +148,7 @@ async function testArguments() {
 
     // 7. Test: --save (writes a separate report_<name>.xlsx next to the input)
     console.log('   Running: --save');
-    const REPORT_FILE = 'tests/report_temp_target.xlsx';
+    const REPORT_FILE = require('path').join(TMP_DIR, 'report_temp_target.xlsx');
     if (fs.existsSync(REPORT_FILE)) fs.unlinkSync(REPORT_FILE);
     runReport(`node report.js "${TARGET_FILE}" --year=2025 --pl --save`);
 
@@ -176,8 +176,7 @@ async function testArguments() {
 
     // Cleanup
     try {
-        fs.unlinkSync(SRC_EXCEL);
-        fs.unlinkSync(TARGET_FILE);
+        fs.rmSync(TMP_DIR, { recursive: true, force: true });
     } catch (e) { }
 }
 

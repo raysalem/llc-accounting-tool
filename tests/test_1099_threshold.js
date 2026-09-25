@@ -11,12 +11,14 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// Test files live in a temp directory so test runs never modify the repo.
+const TMP_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'llc-test-'));
 
 console.log('=== 1099 Threshold Compliance Test ===\n');
 
 // Create a test workbook with specific vendor amounts
 const ExcelJS = require('exceljs');
-const testFile = path.join(__dirname, 'Test_1099_Threshold.xlsx');
+const testFile = path.join(TMP_DIR, 'Test_1099_Threshold.xlsx');
 
 async function createTestWorkbook() {
     const wb = new ExcelJS.Workbook();

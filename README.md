@@ -132,7 +132,7 @@ Both `load_transactions.js` and `report.js` read amounts such as `$1,234.56`, `(
 npm test
 ```
 
-This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to-end integration test and the feature tests) and exits non-zero if any fail. See `tests/EXPECTED_OUTCOME.md` for the integration test's expected numbers.
+This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to-end integration test and the feature tests) and exits non-zero if any fail. See `TESTING.md` for the test plan, the coverage map and the expected numbers.
 
 ## Continuous Integration
 
