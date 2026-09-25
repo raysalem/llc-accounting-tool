@@ -1,54 +1,44 @@
 # Integration Test Overview
 
-This directory contains the integration test suite for the LLC Accounting Tool. The test verifies the entire pipeline: template creation, data loading, categorization, and financial reporting.
+`tests/run_integration_test.js` checks the whole pipeline: template creation, CSV loading, categorization, ledger entries, reporting, the tax-year filter and the integrity checker. It asserts on the report output and exits non-zero if any check fails.
+
+Run every test with:
+```bash
+npm test
+```
 
 ## Test Components
 
-- `example_bank.csv`: Sample bank transactions including income (Salary/Consulting) and expenses (Rent).
-- `example_cc.csv`: Sample credit card purchases (Coffee/Supplies/Cloud Services).
-- `run_integration_test.js`: The main test runner that automates the workflow.
+- `example_bank.csv`: salary deposit, consulting income and a rent payment.
+- `example_cc.csv`: coffee, office supplies and cloud services on a credit card.
+- `run_integration_test.js`: the test runner.
 
-## Test Scenario Description
+## Scenario
 
-This integration test simulates a typical month of LLC activity:
-1.  **Revenue & Expenses**: Imports a bank CSV with a salary deposit, consulting income, and a rent payment.
-2.  **Credit Card Spending**: Imports a CC CSV with office supplies and travel expenses.
-3.  **Manual Adjustments**: Adds an owner investment and an audit adjustment via the Ledger.
-4.  **Integrity Stress Test**: Intentionally adds one "illegal" category and one unknown vendor to verify that the checker correctly identifies and reports them.
+1. **Template**: `generate_excel.js` creates the workbook. Transaction sheets have TOTAL/SUBTOTAL in rows 1–2 and the header in row 3.
+2. **Load**: the bank and CC CSVs are loaded with `--clear`.
+3. **Categorize**: rows are categorized, and a $737.50 payment to an NEC vendor (`Contractor 1099`) is added.
+4. **Ledger** (balanced double entry):
+   - Owner investment: Dr Checking Account 1,000 / Cr Owner Equity 1,000
+   - Audit adjustment: Dr Office 50 / Cr Checking Account 50
 
-## Expected Outcome
+## Expected Results (`--year=2025`)
 
-When running the integration test, the following values are calculated and verified:
+| Check | Math | Expected |
+|---|---|---|
+| Sales | 5,000 + 2,500 | 7,500.00 |
+| Office | 120 + 45 (CC) + 50 (ledger) | 215.00 expense |
+| Net income | 7,500 − 1,500 − 737.50 − 15.50 − 215 | 5,032.00 |
+| Bank balance | 5,000 − 1,500 + 2,500 − 737.50 + 1,000 − 50 | 6,212.50 |
+| CC liability | 15.50 + 120 + 45 | 180.50 |
+| Balance sheet | 6,212.50 = 180.50 + 1,000 + 5,032 | `[OK] (A = L + E)` |
+| Clean run exit code | | 0 |
 
-### 1. Bank Balance (Calculated)
-- **Input**: `6000.00` (CSV) + `1000.00` (Ledger Debit) + `150.00` (Integrity Rows)
-- **Expected Total**: `7150.00`
+## Other Checks
 
-### 2. Credit Card Balance (Calculated)
-- **Input**: `180.50` (CSV charges)
-- **Polarity Flip**: Applied (Expenses shown as negative impacts)
-- **Expected Total**: `-180.50`
+- **1099**: `Contractor 1099` is over the 2025 $600 NEC threshold and is listed. It has no TIN or address, so the run reports "Incomplete Data" and exits non-zero.
+- **Tax year**: with `--year=2026` the header shows the $2,000 NEC threshold, all 11 rows from 2025 (7 transactions + 4 ledger rows) are skipped, and net income is 0.00.
+- **Integrity checker**: after adding a row with an unknown category (`IllegalCat`) and an uncategorized row, `--checker` flags both and exits non-zero.
 
-### 3. Ledger Impact
-- **Owner Investment**: `1000.00` Debit to `Bank Transactions` (Increases Asset)
-- **Audit Adjustment**: `50.00` Debit to `Office` (Increases Expense)
-
-### 4. Net Income (P&L)
-- **Revenue**: `7500.00` (Sales)
-- **Expenses**: `-165.00` (CSV Office) - `15.50` (CSV Travel) - `1500.00` (CSV Rent) - `50.00` (Ledger Office)
-- **Expected Net Income**: `5769.50`
-
-## Test Artifacts
-The test generates `tests/Full_Accounting_Test_Case.xlsx` which contains the complete setup, categorized transactions, and manual ledger entries.
-
-## How to Run
-From the project root:
-```bash
-node tests/run_integration_test.js
-```
-
-### Detailed Integrity Reporting
-When running the financial update, you can use the `--checker` flag to see exact row numbers and details for any data integrity issues:
-```bash
-node update_financials.js --checker
-```
+## Test Artifact
+The test saves `tests/Full_Accounting_Test_Case.xlsx` with the full setup, transactions and ledger entries.

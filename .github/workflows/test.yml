@@ -1,4 +1,4 @@
-name: Node.js Integration Test
+name: Tests
 
 on:
   push:
@@ -10,17 +10,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        node-version: [ '20.x', '22.x' ]
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Use Node.js
-      uses: actions/setup-node@v3
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
       with:
-        node-version: '18.x'
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm install
+      run: npm ci
 
-    - name: Run Integration Test
-      run: node tests/run_integration_test.js
+    - name: Run all tests
+      run: npm test

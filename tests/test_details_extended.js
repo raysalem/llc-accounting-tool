@@ -54,10 +54,17 @@ async function createTestWorkbook() {
 function runCheck(filter, expectedDesc, label) {
     console.log(`\nChecking --details "${filter}"...`);
     try {
-        const output = execSync(`node report.js "${testFile}" --details "${filter}"`, {
-            cwd: path.join(__dirname, '..'), // Run from root
-            encoding: 'utf8'
-        });
+        // report.js exits 1 when the sample books have errors; this test only checks --details output.
+        let output;
+        try {
+            output = execSync(`node report.js "${testFile}" --year=2025 --details "${filter}"`, {
+                cwd: path.join(__dirname, '..'), // Run from root
+                encoding: 'utf8'
+            });
+        } catch (e) {
+            if (!e.stdout) throw e;
+            output = e.stdout.toString();
+        }
 
         if (output.includes(expectedDesc)) {
             console.log(`✓ PASS: Found "${expectedDesc}" when filtering by ${label}`);

@@ -78,7 +78,7 @@ async function runTest() {
     try {
         await createTestWorkbook();
         console.log('Running Polarity Check...');
-        const output = execSync(`node report.js "${testFile}" --bs`, {
+        const output = execSync(`node report.js "${testFile}" --year=2025 --bs`, {
             cwd: path.join(__dirname, '..'),
             encoding: 'utf8'
         });

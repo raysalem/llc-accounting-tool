@@ -36,7 +36,7 @@ async function createTemplate() {
         { header: 'Customers', key: 'customers', width: 25 },
         { header: '', key: 'spacer2', width: 5 },
         { header: 'Sheet Name (Config)', key: 'sheetname', width: 30 },
-        { header: 'Account Type', key: 'sheettype', width: 15 },
+        { header: 'Sheet Type', key: 'sheettype', width: 15 },
         { header: 'Flip Polarity? (Yes/No)', key: 'flip', width: 20 },
         { header: 'Header Row', key: 'offset', width: 15 },
     ];
@@ -55,13 +55,13 @@ async function createTemplate() {
     setupSheet.getCell('I4').value = 'Bank Transactions';
     setupSheet.getCell('J4').value = 'Bank';
     setupSheet.getCell('K4').value = 'No';
-    setupSheet.getCell('L4').value = 1;
+    setupSheet.getCell('L4').value = 3; // load_transactions.js puts TOTAL/SUBTOTAL in rows 1-2
 
     // Row 5 corresponds to 'Credit Card'
     setupSheet.getCell('I5').value = 'Credit Card Transactions';
     setupSheet.getCell('J5').value = 'CC';
     setupSheet.getCell('K5').value = 'Yes'; // Default to Yes for CC
-    setupSheet.getCell('L5').value = 1;
+    setupSheet.getCell('L5').value = 3;
 
     // Add some sample vendors/customers
     setupSheet.getCell('F2').value = 'Starbucks';

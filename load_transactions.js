@@ -1,6 +1,7 @@
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const readline = require('readline');
+const { parseAmount, parseDateUTC } = require('./lib/accounting');
 
 async function loadTransactions() {
     const args = process.argv.slice(2);
@@ -315,7 +316,7 @@ Example:
             // Enhanced Junk Filter
             if (!rec.date) return;
             // Filter out obviously empty rows (desc & amount missing)
-            if ((!rec.desc || rec.desc.trim() === '') && (!rec.amount || parseFloat(rec.amount) === 0)) return;
+            if ((!rec.desc || rec.desc.trim() === '') && (!rec.amount || parseAmount(rec.amount) === 0)) return;
             // Filter out summary/total rows often found in exports
             if (rec.desc && /total|balance|sum/i.test(rec.desc)) return;
 
@@ -327,7 +328,7 @@ Example:
     const rowsToAdd = [];
     records.forEach(rec => {
         let dateVal = rec.date;
-        if (typeof dateVal === 'string') dateVal = new Date(dateVal);
+        if (typeof dateVal === 'string') dateVal = parseDateUTC(dateVal);
 
         let newRow = [];
         if (accountType === 'cc') {
@@ -336,7 +337,7 @@ Example:
                 dateVal,
                 rec.member || '',
                 rec.desc || '',
-                parseFloat(rec.amount) || 0,
+                parseAmount(rec.amount) || 0,
                 '', '', // Cat, Sub
                 rec.extended || '',
                 rec.vendor || '', rec.customer || '', // Vend, Cust
@@ -348,7 +349,7 @@ Example:
             newRow = [
                 dateVal,
                 rec.desc || '',
-                parseFloat(rec.amount) || 0,
+                parseAmount(rec.amount) || 0,
                 '', '', // Cat, Sub
                 rec.extended || '',
                 rec.vendor || '', rec.customer || '', // Vendor, Cust

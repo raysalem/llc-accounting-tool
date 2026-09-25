@@ -17,6 +17,17 @@ function run(cmd) {
     }
 }
 
+// Like run(), but returns output even when report.js exits 1 because the sample
+// books have data-integrity issues. These checks only test flag output.
+function runReport(cmd) {
+    try {
+        return execSync(cmd, { encoding: 'utf-8', stdio: 'pipe' });
+    } catch (e) {
+        if (e.stdout) return e.stdout.toString();
+        throw new Error(`Command failed: ${cmd}`);
+    }
+}
+
 async function testArguments() {
     console.log('--- TEST SUITE: Argument Coverage ---');
 
@@ -107,14 +118,14 @@ async function testArguments() {
 
     // 5. Test: --vendor
     console.log('   Running: --vendor');
-    const vendorOut = run(`node report.js "${TARGET_FILE}" --vendor`);
+    const vendorOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --vendor`);
     if (!vendorOut.includes('VENDOR SPENDING') || !vendorOut.includes('TestVendor')) {
         throw new Error('--vendor flag failed to show vendor report');
     }
 
     // 6. Test: --customer
     console.log('   Running: --customer');
-    const custOut = run(`node report.js "${TARGET_FILE}" --customer`);
+    const custOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --customer`);
     if (!custOut.includes('CUSTOMER INCOME') || !custOut.includes('TestCust')) {
         throw new Error('--customer flag failed to show customer report');
     }
@@ -126,7 +137,7 @@ async function testArguments() {
     sheet.getRow(4).getCell(5).value = 'Software'; // Sub-Category
     await wb.xlsx.writeFile(TARGET_FILE);
 
-    const plSubOut = run(`node report.js "${TARGET_FILE}" --pl-sub`);
+    const plSubOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --pl-sub`);
     if (!plSubOut.includes('PROFIT & LOSS') || !plSubOut.includes('> Software')) {
         console.error('--- FAILURE OUTPUT START ---');
         console.error(plSubOut);
@@ -135,22 +146,29 @@ async function testArguments() {
     }
 
 
-    // 7. Test: --save (Check Summary Tab)
+    // 7. Test: --save (writes a separate report_<name>.xlsx next to the input)
     console.log('   Running: --save');
-    run(`node report.js "${TARGET_FILE}" --save`);
+    const REPORT_FILE = 'tests/report_temp_target.xlsx';
+    if (fs.existsSync(REPORT_FILE)) fs.unlinkSync(REPORT_FILE);
+    runReport(`node report.js "${TARGET_FILE}" --year=2025 --pl --save`);
 
-    // Verify File Change
+    if (!fs.existsSync(REPORT_FILE)) throw new Error(`--save failed: ${REPORT_FILE} not created`);
     const finalWb = new ExcelJS.Workbook();
-    await finalWb.xlsx.readFile(TARGET_FILE);
-    const summary = finalWb.getWorksheet('Summary');
-    if (!summary) throw new Error('--save failed: Summary tab not created');
-    if (summary.getCell('A3').value !== 'Profit & Loss') throw new Error('Summary tab content invalid');
+    await finalWb.xlsx.readFile(REPORT_FILE);
+    if (!finalWb.getWorksheet('Profit & Loss')) throw new Error('--save failed: "Profit & Loss" sheet missing from report');
+    if (!finalWb.getWorksheet('Report Info')) throw new Error('--save failed: "Report Info" sheet missing from report');
 
     // 8. Test: --1099
     console.log('Testing --1099...');
-    run(`node report.js "${TARGET_FILE}" --1099`);
+    runReport(`node report.js "${TARGET_FILE}" --year=2025 --1099`);
 
-    // 8. Test: --help
+    // 9. Test: --details (formerly tests/test_details_flag.js, which depended on this file existing)
+    const detailsOut = runReport(`node report.js "${TARGET_FILE}" --year=2025 --details "Rent"`);
+    if (!detailsOut.includes('DETAILS: "rent"') || !detailsOut.includes('TOTAL')) {
+        throw new Error('--details flag failed to show details with a total');
+    }
+
+    // 10. Test: --help
     const upHelp = run('node report.js --help');
     if (!upHelp.includes('Usage: node report.js')) throw new Error('report.js --help failed');
 

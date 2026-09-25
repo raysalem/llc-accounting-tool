@@ -36,7 +36,7 @@ async function runTest() {
     try {
         // Run report.js --checker
         // We EXPECT this to fail using the catch block
-        execSync(`node report.js "${TEST_FILE}" --checker 2>&1`, { encoding: 'utf8' });
+        execSync(`node report.js "${TEST_FILE}" --year=2025 --checker 2>&1`, { encoding: 'utf8' });
 
         // If we get here, it didn't crash -> FAIL
         console.error('[FAIL] Script failed to crash. Zero tolerance enforcement is missing.');

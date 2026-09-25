@@ -154,41 +154,41 @@ async function runTests() {
     };
 
     // 1. Basic PL
-    const plOut = run(`node report.js "${TEST_FILE}" --pl`, true);
+    const plOut = run(`node report.js "${TEST_FILE}" --year=2025 --pl`, true);
     check('P&L Standard', plOut, ['PROFIT & LOSS', 'Sales', 'Office Exp', 'NET INCOME']);
 
     // 2. PL Sub (Check New Header Format)
-    const plSubOut = run(`node report.js "${TEST_FILE}" --pl-sub`, true);
+    const plSubOut = run(`node report.js "${TEST_FILE}" --year=2025 --pl-sub`, true);
     // Look for new header strings "Additions" "Subtractions" "Net"
     // Look for Sheet Columns "Bank ABC" "CC Amex" "Ledger"
     check('P&L Sub-Report (Detailed)', plSubOut,
         ['Additions', 'Subtractions', 'Net', 'Bank', 'Amex', 'Ledger']);
 
     // 3. BS Sub
-    const bsSubOut = run(`node report.js "${TEST_FILE}" --bs-sub`, true);
+    const bsSubOut = run(`node report.js "${TEST_FILE}" --year=2025 --bs-sub`, true);
     check('BS Sub-Report (Detailed)', bsSubOut,
         ['BALANCE SHEET', 'Additions', 'Subtractions', 'Net', 'Bank']);
 
     // 4. Customer Sub
-    const custSubOut = run(`node report.js "${TEST_FILE}" --customer-sub`, true);
+    const custSubOut = run(`node report.js "${TEST_FILE}" --year=2025 --customer-sub`, true);
     check('Customer Sub-Report', custSubOut, ['CUSTOMER INCOME', 'Client A', 'Bank']);
 
     // 5. Vendor Sub
-    const vendSubOut = run(`node report.js "${TEST_FILE}" --vendor-sub`, true);
+    const vendSubOut = run(`node report.js "${TEST_FILE}" --year=2025 --vendor-sub`, true);
     check('Vendor Sub-Report', vendSubOut, ['VENDOR SPENDING', 'Staples', 'Landlord', 'Additions', 'Subtractions']);
 
     // 6. Checker
-    const checkerOut = run(`node report.js "${TEST_FILE}" --checker`, true);
+    const checkerOut = run(`node report.js "${TEST_FILE}" --year=2025 --checker`, true);
     check('Checker', checkerOut, ['DATA INTEGRITY ISSUES', 'Junk Row', 'MISSING CATEGORY']);
 
     // 7. Details
-    const detailOut = run(`node report.js "${TEST_FILE}" --details "Sales"`, true);
+    const detailOut = run(`node report.js "${TEST_FILE}" --year=2025 --details "Sales"`, true);
     check('Details Flag', detailOut, ['DETAILS: "sales"', 'Client Payment', '5000.00']);
 
     // 8. 1099 Generation within Excel Report
     const reportFile = 'tests/report_comprehensive_test_data.xlsx';
     try { fs.unlinkSync(reportFile); } catch (e) { }
-    const out1099 = run(`node report.js "${TEST_FILE}" --1099 --save`, true);
+    const out1099 = run(`node report.js "${TEST_FILE}" --year=2025 --1099 --save`, true);
     console.log(out1099); // Print full output for debugging
 
     if (fs.existsSync(reportFile)) {
@@ -200,11 +200,13 @@ async function runTests() {
             console.log('✅ [PASS] 1099 Data Sheet Found in Excel');
             let foundLawyer = false;
             let lawyerAmount = 0;
+            let amountCol = null;
+            sheet1099.getRow(1).eachCell((c, col) => { if (c.value === 'Amount') amountCol = col; });
 
             sheet1099.eachRow((row, rowNumber) => {
                 if (rowNumber === 1) return;
                 const name = row.getCell(1).value;
-                const amtVal = row.getCell(13).value;
+                const amtVal = amountCol ? row.getCell(amountCol).value : null;
                 console.log(`   [DEBUG 1099 Row] Name: "${name}", Amount: ${amtVal}`);
                 if (name && (name.toString().includes('Lawyer 1099') || name.toString().includes('Law Firm LLC'))) {
                     foundLawyer = true;

@@ -3,9 +3,15 @@
     "version": "3.0.142",
     "description": "Tools for managing LLC accounting using Excel and Node.js",
     "main": "generate_excel.js",
+    "scripts": {
+        "test": "node tests/run_all.js"
+    },
     "dependencies": {
         "exceljs": "^4.4.0",
         "glob": "^13.0.0",
         "pdfkit": "^0.17.2"
+    },
+    "engines": {
+        "node": ">=20"
     }
 }

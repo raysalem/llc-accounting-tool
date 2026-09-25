@@ -112,33 +112,38 @@ The tool validates every transaction during the report generation process:
 4. **Update Financials**:
    Run the report script to refresh the Summary and generate reports:
    ```bash
-   node report.js
+   node report.js My_Books.xlsx --pl --bs --year=2025
    ```
 
-## Running the Integration Test
+### Tax Year
+Reports cover one calendar year. Rows dated in other years (transactions and ledger entries) are skipped, and the report says how many were skipped.
+- `--year=YYYY` picks the year. Without it, the tool uses `DEFAULT_TAX_YEAR` in `lib/accounting.js` (currently **2026**). Update that constant once a year.
+- The year also sets the 1099-NEC/MISC threshold: **$600** for payments before 2026, **$2,000** from 2026.
 
-You can verify the entire workflow (template generation -> transaction loading -> report generation) by running the integration test:
+### Exit Codes
+`report.js` exits with code **1** when the books have critical errors (for example an unbalanced balance sheet or ledger, or incomplete 1099 vendor details) or data-integrity issues (uncategorized rows, unknown categories, vendors or customers). Otherwise it exits 0, so scripts and CI can detect problems.
+
+### Amount Formats
+Both `load_transactions.js` and `report.js` read amounts such as `$1,234.56`, `(1,234.56)` (negative), `1,234.56-` and `100.00 CR`. Text that is not a number is reported and skipped, never treated as 0.
+
+## Running the Tests
 
 ```bash
-node tests/run_integration_test.js
+npm test
 ```
 
-This script:
-1.  Generates a fresh template.
-2.  Loads data from `example_bank.csv` and `example_cc.csv`.
-3.  Simulates transaction categorization.
-4.  Prints a financial report and verifies the totals.
-5.  Saves a complete Excel artifact to `tests/Full_Accounting_Test_Case.xlsx`.
+This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to-end integration test and the feature tests) and exits non-zero if any fail. See `tests/EXPECTED_OUTCOME.md` for the integration test's expected numbers.
 
 ## Continuous Integration
 
-This project uses **GitHub Actions** to ensure code quality. On every push or pull request to the `main` branch, the integration test suite is automatically executed.
+This project uses **GitHub Actions** to ensure code quality. On every push or pull request to the `main` branch, `npm test` runs on Node 20 and 22. The build fails if any test fails.
 
 ## Key Scripts
 
 - `generate_excel.js`: Creates the initial boilerplate Excel structure.
 - `report.js`: The main engine for calculating balances and generating reports.
 - `load_transactions.js`: Handles importing data from external sources.
+- `lib/accounting.js`: Shared amount/date parsing, the default tax year and 1099 thresholds.
 - `inspect.js`: Consolidated utility for debugging and data validation.
 
 ## License

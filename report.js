@@ -9,7 +9,7 @@ try { PDFDocument = require('pdfkit'); } catch (e) { /* ignore if missing */ }
 // Store original console just in case
 // Store original console just in case
 const originalConsole = { log: console.log, warn: console.warn, error: console.error };
-const THRESHOLD_1099_NEC = 600;
+const { parseAmount, parseTaxYear, getYear, get1099Threshold } = require('./lib/accounting');
 
 // --- Logger Buffer for "Notes" Tab ---
 global.globalWarningCount = 0;
@@ -86,6 +86,17 @@ async function updateFinancials() {
     const show1099 = show1099All || show1099NEC || show1099INT;
     const ignoreVendors = args.includes('--ignore-vendors');
 
+    // Parse --year=YYYY / --year YYYY (defaults to DEFAULT_TAX_YEAR in lib/accounting.js)
+    let taxYear;
+    try {
+        taxYear = parseTaxYear(args);
+    } catch (e) {
+        console.error(`Error: ${e.message}`);
+        process.exit(1);
+    }
+    const THRESHOLD_1099_NEC = get1099Threshold('NEC', taxYear);
+    let skippedOutOfYear = 0;
+
     // Parse --vendor-file <path>
     const vendorFileIndex = args.indexOf('--vendor-file');
     const customVendorFile = vendorFileIndex !== -1 && args[vendorFileIndex + 1] ? args[vendorFileIndex + 1] : null;
@@ -129,6 +140,9 @@ Flags:
   --ignore-vendors (Optional) Skip loading external "vendor.xlsx" or "vendor.csv" files.
   --vendor-file [path] (Optional) Specify a custom path to a "vendor.xlsx" or "vendor.csv" file.
   --details "Name" (Optional) List all transactions matching a specific Category, Vendor, or Customer.
+  --year=YYYY     (Optional) Tax year to report on. Rows dated in other years are skipped.
+                  Also selects the 1099-NEC threshold ($600 before 2026, $2,000 from 2026).
+                  Defaults to DEFAULT_TAX_YEAR in lib/accounting.js.
 
 Example:
   node report.js "My_Books_2025.xlsx" --checker --save
@@ -137,11 +151,11 @@ Example:
     }
 
     const knownFlags = [
-        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file', '--all'
+        '--save', '--pl', '--bs', '--vendor', '--vendor-sub', '--customer', '--customer-sub', '--pl-sub', '--bs-sub', '--checker', '--debug', '--details', '--help', '--1099', '--1099-nec', '--1099=NEC', '--1099=INT', '--ignore-vendors', '--vendor-file', '--all', '--year'
     ];
 
     // Check for unknown arguments
-    const unknownArgs = args.filter(a => a.startsWith('--') && !knownFlags.includes(a));
+    const unknownArgs = args.filter(a => a.startsWith('--') && !knownFlags.includes(a) && !a.startsWith('--year='));
     if (unknownArgs.length > 0) {
         console.error(`Error: Unknown argument(s): ${unknownArgs.join(', ')}`);
         console.error('Run with --help to see available options.');
@@ -150,13 +164,15 @@ Example:
 
 
 
-    let filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
+    const optionValueIdx = new Set(['--year', '--details', '--vendor-file'].map(f => args.indexOf(f)).filter(i => i !== -1).map(i => i + 1));
+    let filename = args.find((a, i) => !a.startsWith('--') && !optionValueIdx.has(i)) || 'LLC_Accounting_Template.xlsx';
     let originalInputPath = filename; // Store original input for path resolution
 
     // Resolve shortcut if needed
     if (fs.existsSync(filename)) {
         const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
         console.log(`LLC Accounting Tool v${pkg.version}`);
+        console.log(`Tax year: ${taxYear} (1099-NEC threshold: $${THRESHOLD_1099_NEC.toLocaleString()})`);
 
         const resolved = resolveShortcut(filename);
         if (resolved !== filename) {
@@ -215,7 +231,7 @@ Example:
         if (val === null || val === undefined) return null;
         let s = val.toString().trim();
         if (s === '' || s.toLowerCase() === 'na' || s.toLowerCase() === 'n/a' || s.toLowerCase() === 'nan') return null;
-        const n = parseFloat(s);
+        const n = parseAmount(s);
         return isNaN(n) ? null : n;
     };
     let payerInfo = {}; // Payer/Company Info Map
@@ -859,8 +875,8 @@ Example:
     if (sheetConfigs.length === 0) {
         // Fallback defaults if no config found in Setup
         console.warn('[!] No sheet configurations found in Setup. Using defaults.');
-        sheetConfigs.push({ name: 'Bank Transactions', type: 'Bank', flip: false, offset: 1, linkedAccount: null });
-        sheetConfigs.push({ name: 'Credit Card Transactions', type: 'CC', flip: true, offset: 1, linkedAccount: null });
+        sheetConfigs.push({ name: 'Bank Transactions', shortName: 'Bank Transactions', type: 'Bank', flip: false, offset: 1, linkedAccount: null });
+        sheetConfigs.push({ name: 'Credit Card Transactions', shortName: 'Credit Card Transactions', type: 'CC', flip: true, offset: 1, linkedAccount: null });
     }
 
     // --- 1.5 Load External Vendors (Override/Enrich Setup) ---
@@ -1177,8 +1193,7 @@ Example:
                     if (amtStr === '' || amtStr === '-') {
                         amount = 0;
                     } else {
-                        const cleanAmt = amtStr.replace(/[^0-9.-]/g, '');
-                        const parsed = parseFloat(cleanAmt);
+                        const parsed = parseAmount(amtStr);
                         if (isNaN(parsed)) {
                             if (showChecker && amtStr.length > 0) {
                                 console.warn(`[WARNING] Sheet "${sheet.name}" Row ${r}: Could not parse amount "${amount}". Skipping.`);
@@ -1239,6 +1254,13 @@ Example:
                 // 3. Skip invalid amounts (already handled above, but double check)
                 if (isNaN(amount)) return;
 
+                // 4. Skip rows outside the selected tax year
+                const rowYear = getYear(dateObj);
+                if (rowYear !== null && rowYear !== taxYear) {
+                    skippedOutOfYear++;
+                    return;
+                }
+
                 processedRows++;
 
                 if (config.flip) amount *= -1;
@@ -1255,7 +1277,7 @@ Example:
 
                 if (!categoryVal && Math.abs(amount) > 0.01) {
                     if (pType === 'cc') uncategorizedCC++; else uncategorizedBank++;
-                    uncategorizedDetails.push({ sheet: config.shortName, row: r, date: displayDate, desc: rawDesc });
+                    uncategorizedDetails.push({ sheet: config.shortName || sheet.name, row: r, date: displayDate, desc: rawDesc });
                 }
 
                 // Define catLower for use in vendor/customer tracking
@@ -1355,7 +1377,7 @@ Example:
                             illegalSubCategories.push({
                                 value: sName,
                                 category: displayCat,
-                                sheet: config.shortName,
+                                sheet: config.shortName || sheet.name,
                                 row: r,
                                 date: displayDate
                             });
@@ -1707,8 +1729,8 @@ Example:
             // Ledger SubCat support
             const subCatVal = ledgerMap.subCat ? getVal(row.getCell(ledgerMap.subCat)) : '';
 
-            const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
-            const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseFloat(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
+            const dr = (ledgerMap.dr && row.getCell(ledgerMap.dr).value) ? (parseAmount(getVal(row.getCell(ledgerMap.dr))) || 0) : 0;
+            const cr = (ledgerMap.cr && row.getCell(ledgerMap.cr).value) ? (parseAmount(getVal(row.getCell(ledgerMap.cr))) || 0) : 0;
 
             const vendorVal = ledgerMap.vendor ? getVal(row.getCell(ledgerMap.vendor)) : '';
             const customerVal = ledgerMap.customer ? getVal(row.getCell(ledgerMap.customer)) : '';
@@ -1721,6 +1743,13 @@ Example:
                     process.exit(1);
                 }
                 return; // Truly empty row
+            }
+
+            // Skip ledger entries outside the selected tax year
+            const ledgerYear = getYear(rawDate);
+            if (ledgerYear !== null && ledgerYear !== taxYear) {
+                skippedOutOfYear++;
+                return;
             }
 
             ledgerDebitTotal += dr;
@@ -2254,7 +2283,8 @@ Example:
             // Print subcategory breakdowns if available
             if (r.subCats && Object.keys(r.subCats).length > 0) {
                 Object.entries(r.subCats).forEach(([subName, subTotal]) => {
-                    if (subName === '(No Sub-Cat)') return; // Skip the default
+                    // Show "(No Sub-Cat)" only when other sub-categories exist, so the lines add up to the total
+                    if (subName === '(No Sub-Cat)' && Object.keys(r.subCats).length === 1) return;
                     const subLine = `  > ${subName}`.substring(0, LABEL_WIDTH - 1).padEnd(LABEL_WIDTH) +
                         subTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(COL_WIDTH) +
                         " ".repeat(h2.length - LABEL_WIDTH - COL_WIDTH); // Fill rest with spaces
@@ -2384,7 +2414,7 @@ Example:
                 // Determine if vendor actually qualifies for 1099 reporting
                 let displayReq = '';
                 if (info.type) {
-                    const threshold = info.type === 'INT' ? 0 : 600; // INT has $0 threshold, NEC has $600
+                    const threshold = get1099Threshold(info.type, taxYear);
                     const meetsThreshold = r.value > 0 && r.value >= threshold;
                     displayReq = meetsThreshold ? 'YES' : '';
                 }
@@ -2431,7 +2461,7 @@ Example:
         console.log(`  Contact: ${pEmail} / ${pPhone}`);
         console.log('-'.repeat(40));
 
-        if (activeNEC) print1099('NEC', reports.vendors1099NEC, 600);
+        if (activeNEC) print1099('NEC', reports.vendors1099NEC, THRESHOLD_1099_NEC);
         if (activeINT) print1099('INT', reports.vendors1099INT, 0);
 
         // Generate 1099 List if any data found
@@ -2638,6 +2668,10 @@ Example:
 
 
 
+    if (skippedOutOfYear > 0) {
+        console.log(`\n[Tax Year] Skipped ${skippedOutOfYear} transaction row(s) dated outside ${taxYear}. Use --year=YYYY to report on a different year.`);
+    }
+
     // --- Final Status ---
     const totalIssues = (global.globalWarningCount || 0);
     if (!hasErrors && totalIssues === 0) {
@@ -2647,6 +2681,8 @@ Example:
     }
 
     const hasIssues = uncategorizedDetails.length > 0 || illegalCategories.length > 0 || illegalVendors.length > 0 || illegalCustomers.length > 0 || illegalSubCategories.length > 0;
+    // Non-zero exit when the books have errors or integrity issues, so scripts and CI can detect it.
+    if (hasErrors || hasIssues) process.exitCode = 1;
     if (hasIssues) {
         console.log('\n--- DATA INTEGRITY ISSUES ---');
         const issueSheetsFound = new Set([
@@ -2896,7 +2932,8 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
 
                 if (c.subCats && Object.keys(c.subCats).length > 0) {
                     Object.entries(c.subCats).forEach(([subName, subTotal]) => {
-                        if (subName === '(No Sub-Cat)') return;
+                        // Show "(No Sub-Cat)" only when other sub-categories exist, so the lines add up to the total
+                        if (subName === '(No Sub-Cat)' && Object.keys(c.subCats).length === 1) return;
                         const subRow = ['  > ' + subName, subTotal];
                         for (let i = 2; i < header.length; i++) subRow.push(null);
                         const r = wsSub.addRow(subRow);
@@ -2973,7 +3010,8 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
                     wsSub.addRow(row);
                     if (c.subCats && Object.keys(c.subCats).length > 0) {
                         Object.entries(c.subCats).forEach(([subName, subTotal]) => {
-                            if (subName === '(No Sub-Cat)') return;
+                            // Show "(No Sub-Cat)" only when other sub-categories exist, so the lines add up to the total
+                            if (subName === '(No Sub-Cat)' && Object.keys(c.subCats).length === 1) return;
                             const subRow = ['  > ' + subName, null, subTotal];
                             // Fill blank columns for sub-cats
                             for (let i = 3; i < header.length; i++) subRow.push(null);
@@ -3036,7 +3074,8 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
                 wsSub.addRow(row);
                 if (v.subCats && Object.keys(v.subCats).length > 0) {
                     Object.entries(v.subCats).forEach(([subName, subTotal]) => {
-                        if (subName === '(No Sub-Cat)') return;
+                        // Show "(No Sub-Cat)" only when other sub-categories exist, so the lines add up to the total
+                        if (subName === '(No Sub-Cat)' && Object.keys(v.subCats).length === 1) return;
                         const subRow = ['  > ' + subName, subTotal];
                         for (let i = 2; i < header.length; i++) subRow.push(null);
                         const r = wsSub.addRow(subRow);
@@ -3073,7 +3112,8 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
                 wsSub.addRow(row);
                 if (c.subCats && Object.keys(c.subCats).length > 0) {
                     Object.entries(c.subCats).forEach(([subName, subTotal]) => {
-                        if (subName === '(No Sub-Cat)') return;
+                        // Show "(No Sub-Cat)" only when other sub-categories exist, so the lines add up to the total
+                        if (subName === '(No Sub-Cat)' && Object.keys(c.subCats).length === 1) return;
                         const subRow = ['  > ' + subName, subTotal];
                         for (let i = 2; i < header.length; i++) subRow.push(null);
                         const r = wsSub.addRow(subRow);
@@ -3129,8 +3169,7 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
     logWs.getColumn(1).width = 120;
     logs.forEach(l => logWs.addRow([l.replace(/\x1b\[[0-9;]*m/g, '')]));
 
-    // Incremented Version Logic
-    const newVersion = incrementPackageVersion();
+    const newVersion = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version;
 
     // Recover original input path directly from process.argv
     const rawArgs = process.argv.slice(2);
@@ -3141,7 +3180,6 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
 
     await wb.xlsx.writeFile(newFilename);
     originalConsole.log(`[Saved] Report saved to: ${newFilename}`);
-    originalConsole.log(`[Version] Updated to ${newVersion}`);
 
     // PDF Generation
     if (PDFDocument) {
@@ -3149,24 +3187,6 @@ async function saveReport(originalFilename, reports, logs, flags, vendorDetails,
         await generatePDF(pdfName, reports, newVersion, originalInputPath);
     }
 
-}
-
-function incrementPackageVersion() {
-    try {
-        const pkgPath = path.join(__dirname, 'package.json');
-        if (fs.existsSync(pkgPath)) {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-            const parts = (pkg.version || '1.0.0').split('.').map(Number);
-            parts[2] = (parts[2] || 0) + 1; // Increment patch
-            const newVer = parts.join('.');
-            pkg.version = newVer;
-            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 4));
-            return newVer;
-        }
-    } catch (e) {
-        /* ignore */
-    }
-    return 'Unknown';
 }
 
 function addMetadataSheet(wb, version, filename, command) {
