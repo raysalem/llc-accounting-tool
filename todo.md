@@ -56,9 +56,9 @@ Gaps, in priority order:
 - [ ] **Shared state:** phases share a mutable `ctx` object. Over time, have each phase return its results instead of writing into `ctx`.
 - [x] **Removed dead code:** the never-written 1099 CSV builder and the unused end-balance calculation in `linkage.js` (the real check is in `wallets.js`).
 - [ ] **`--save` fills a Summary sheet in the input workbook but never saves it** (`lib/report/summary.js`), and the "(Run with --save to update the Excel file)" hint is misleading: `--save` writes a separate `report_<name>.xlsx`. Decide: remove the Summary code and fix the hint, or actually save the Summary into the input workbook.
-- [ ] **Remove dead code and stale comments.** Examples: "REDUNDANT BLOCK REMOVED", "The previous logic here (Lines 713-732)", "TODO: Replace this with table-based reading once tables are created".
+- [x] **Stale comments removed** (old line references, "REDUNDANT BLOCK REMOVED", commented-out code, section numbers from the old single file).
 - [ ] **Setup parsing picks columns by header name.** Duplicate names across tables (`Type`, `Category`) are resolved by "first" vs "last" occurrence, which is how the template bug happened. Prefer the formal Excel tables (`CompanyInfo`, `Categories`, `Vendor`, `Customer`, `SheetInfo`) that the code already looks for, and make the template create them.
-- [ ] **The fallback sheet configs** (used when Setup has none) assume header row 1, but `load_transactions.js` writes the header in row 3.
+- [x] **Fallback sheet configs** (used when Setup has none) now detect the header row instead of assuming row 1, so sheets filled by `load_transactions.js` (header on row 3) work. `tests/test_fallback_sheets.js`.
 - [ ] **The integrity checker ignores rows it can't read.** Rows with unparseable dates are skipped with a warning only under `--checker`. Consider always counting them as issues.
 - [ ] **Decide whether a `CRITICAL WARNING` should fail the run.** For example, a transfer category used on the wrong sheet prints a `CRITICAL WARNING` but `report.js` still exits 0.
 - [x] **ESLint** (`npm run lint`, `eslint.config.js`) runs in CI; the codebase passes with no errors. It fixed or removed ~50 issues, mostly unused variables and dead code.

@@ -26,6 +26,7 @@ All sample books balance, so tests expect `report.js` to exit 0 unless they are 
 | Reports | `--details` includes Ledger rows and doesn't change totals | `test_details_ledger.js` |
 | CLI | `load_transactions.js` append / `--clear` / `--help`; `report.js` flags and `--save` | `test_arguments_coverage.js` |
 | CLI | `--vendor-file`, `vendor.csv` next to the workbook, `--ignore-vendors`, `--all`, `--debug` | `test_vendor_file.js` |
+| Setup | No sheet configuration in Setup: default sheets are used and their header row is found | `test_fallback_sheets.js` |
 
 ## Integration Test (`run_integration_test.js`)
 
