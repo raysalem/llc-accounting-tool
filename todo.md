@@ -72,6 +72,6 @@ Gaps, in priority order:
 - [ ] **Too many overlapping top-level docs:** `PROJECT_CONTEXT`, `FEATURE_SET`, `DEV_CHECKLIST`, `FUTURE_TASKS`, `SETUP_REQUIREMENTS`, `DEPENDENCIES`, `TESTING` and `ACCOUNTING_RULEBOOK`. Merge them into `README.md`, `docs/setup.md`, `docs/accounting-rules.md` and this file.
 - [x] **One-off scripts moved to `scripts/`.** `fix_garbage.js` was deleted; it patched text in the old `report.js`.
 - [ ] **`scripts/monitor_booking.js`** checks a campsite-booking website and is unrelated to this tool. Consider moving it to its own repo.
-- [ ] **Keep real data out of the repo going forward:** keep `.gitignore` covering `*.txt`, `*.xlsx` and `*.csv` outside `tests/` and `examples/`. Add a pre-commit hook that blocks bank-export file names and your NAS paths.
+- [x] **Personal-data guard:** `scripts/check-sensitive.js` runs as a pre-commit hook (enabled by `npm install`) and in CI. `.gitignore` now also covers `*.csv`, `*.pdf`, `*.xls` and `*.lnk` outside `tests/`.
 - [ ] **Use descriptive commit messages** (not "minor" or "large chang set") so the history of an accounting tool can be audited.
 - [ ] **Version numbering:** now that the patch number no longer auto-increments, bump the version by hand on releases. Consider resetting to a meaningful version (e.g. 3.1.0).

@@ -5,7 +5,9 @@
     "main": "generate_excel.js",
     "scripts": {
         "test": "node tests/run_all.js",
-        "lint": "eslint ."
+        "lint": "eslint .",
+        "check-sensitive": "node scripts/check-sensitive.js",
+        "prepare": "git config core.hooksPath .githooks || true"
     },
     "dependencies": {
         "exceljs": "^4.4.0",

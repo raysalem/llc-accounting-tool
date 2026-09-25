@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks commits containing personal financial data. See scripts/check-sensitive.js.
+exec node scripts/check-sensitive.js --staged

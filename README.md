@@ -134,9 +134,18 @@ npm test
 
 This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to-end integration test and the feature tests) and exits non-zero if any fail. See `TESTING.md` for the test plan, the coverage map and the expected numbers.
 
+## Keeping Personal Data Out of the Repo
+
+`npm install` turns on a pre-commit hook (`.githooks/pre-commit`) that runs `scripts/check-sensitive.js`. It blocks a commit that adds:
+- data files (`.csv`, `.xlsx`, `.pdf`, `.txt`, `.lnk`) outside `tests/` and `examples/`
+- network-share paths to an IP address
+- values that look like real Social Security numbers
+
+CI runs the same check on every push. If a line is a harmless example, add `sensitive-ok` to it.
+
 ## Continuous Integration
 
-This project uses **GitHub Actions** to ensure code quality. On every push or pull request to the `main` branch, `npm test` runs on Node 20 and 22. The build fails if any test fails.
+This project uses **GitHub Actions** to ensure code quality. On every push or pull request to the `main` branch, CI checks for personal data, runs ESLint (`npm run lint`) and runs `npm test` on Node 20 and 22. The build fails if any step fails.
 
 ## Project Layout
 

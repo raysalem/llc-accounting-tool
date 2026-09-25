@@ -10,3 +10,10 @@ run commands.md
 report_*
 !tests/*.txt
 tests/debug_*.txt
+
+# Real statements and reports must never be committed (see scripts/check-sensitive.js)
+*.csv
+!tests/*.csv
+*.pdf
+*.xls
+*.lnk
