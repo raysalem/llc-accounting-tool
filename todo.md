@@ -48,6 +48,7 @@ Gaps, in priority order:
 ## Code
 
 - [x] **Split `updateFinancials()`** into modules under `lib/report/` and `lib/output/`, and `load_transactions.js` into `lib/loader/`. Output was verified byte-for-byte identical on 102 report runs and 7 loader scenarios.
+- [x] **Fixed `--details` with Ledger rows.** A typo (`targetDetailsCategory`) made every Ledger row throw under `--details`; the error was swallowed, so ledger rows were missing from the details list and their vendor/customer totals were dropped (e.g. a vendor showed $50 instead of $150). Covered by `tests/test_details_ledger.js`.
 - [ ] **Unit-test the calculation phases directly** (e.g. `buildReports`, `applySheetLinkage`) now that they are separate functions.
 - [ ] **Row processing is still one large closure** in `lib/report/transactions.js` (~370 lines) and `lib/report/ledger.js`. Splitting them further means rewriting them, not just moving code; do it with tests in place.
 - [ ] **Shared state:** phases share a mutable `ctx` object. Over time, have each phase return its results instead of writing into `ctx`.

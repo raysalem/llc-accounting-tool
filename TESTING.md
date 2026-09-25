@@ -23,6 +23,7 @@ Tests write their workbooks to a temporary directory, so a test run never change
 | 1099 | Missing vendor TIN/address flagged; `1099 Data` sheet amount | `run_integration_test.js`, `test_comprehensive_report.js` |
 | Checker | Unknown category, uncategorized rows, non-zero exit | `run_integration_test.js`, `test_comprehensive_report.js` |
 | Reports | `--pl-sub`, `--bs-sub`, `--vendor-sub`, `--customer-sub`, `--details` | `test_comprehensive_report.js`, `test_details_extended.js`, `test_pl_sub_display.js` |
+| Reports | `--details` includes Ledger rows and doesn't change totals | `test_details_ledger.js` |
 | CLI | `load_transactions.js` append / `--clear` / `--help`; `report.js` flags and `--save` | `test_arguments_coverage.js` |
 
 ## Integration Test (`run_integration_test.js`)
