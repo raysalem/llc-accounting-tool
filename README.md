@@ -138,13 +138,34 @@ This runs every file in `tests/` (unit tests for `lib/accounting.js`, the end-to
 
 This project uses **GitHub Actions** to ensure code quality. On every push or pull request to the `main` branch, `npm test` runs on Node 20 and 22. The build fails if any test fails.
 
-## Key Scripts
+## Project Layout
 
-- `generate_excel.js`: Creates the initial boilerplate Excel structure.
-- `report.js`: The main engine for calculating balances and generating reports.
-- `load_transactions.js`: Handles importing data from external sources.
-- `lib/accounting.js`: Shared amount/date parsing, the default tax year and 1099 thresholds.
-- `inspect.js`: Consolidated utility for debugging and data validation.
+Entry points (run with `node <script> --help`):
+
+- `generate_excel.js`: creates the starting Excel workbook.
+- `load_transactions.js`: imports a bank or credit-card export (CSV or Excel) into the workbook.
+- `report.js`: builds and prints the reports; `--save` writes `report_<name>.xlsx` and a PDF.
+
+Supporting code:
+
+| Path | What it does |
+|---|---|
+| `lib/accounting.js` | Amount and date parsing, the default tax year, 1099 thresholds |
+| `lib/cli.js` | `report.js` command-line options and help |
+| `lib/logger.js` | Captures console output for the saved report's Processing Log |
+| `lib/util.js` | Resolves Windows `.lnk` / `.url` shortcuts |
+| `lib/loader/` | `load_transactions.js` steps: target sheet, reading the source file, writing rows, import history |
+| `lib/report/context.js` | Shared state passed between the report phases |
+| `lib/report/setup.js`, `sheet-config.js`, `external-vendors.js` | Read the Setup sheet and optional `vendor.xlsx` / `vendor.csv` |
+| `lib/report/transactions.js`, `sheet-columns.js`, `columns.js`, `linkage.js` | Process transaction sheets and apply each sheet's total to its linked account |
+| `lib/report/ledger.js`, `wallets.js` | Process the Ledger sheet; check ending balances |
+| `lib/report/build-reports.js` | Build P&L, balance sheet, vendor and customer report rows |
+| `lib/report/print-statements.js`, `print-1099.js`, `format-table.js`, `diagnostics.js` | Console output and final status |
+| `lib/report/summary.js`, `lib/output/` | `--save`: Excel report and PDF |
+| `scripts/` | Utilities: `batch_run.js` (run `report.js` on many workbooks), `inspect.js` (dump a workbook's setup) |
+| `tests/` | Test suite (`npm test`); see `TESTING.md` |
+
+`report.js` runs the phases in order: setup → sheet config → external vendors → transactions → ledger → wallet check → build reports → print → diagnostics → save.
 
 ## License
 

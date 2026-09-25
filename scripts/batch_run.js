@@ -3,12 +3,14 @@ const path = require('path');
 const { exec } = require('child_process');
 const { glob } = require('glob');
 
-// Usage: node batch_run.js "<glob_pattern>" [arg1] [arg2] ...
-// Example: node batch_run.js "./taxes/2025/*.xlsx" --pl --bs --save
+const REPORT_JS = path.join(__dirname, '..', 'report.js');
+
+// Usage: node scripts/batch_run.js "<glob_pattern>" [arg1] [arg2] ...
+// Example: node scripts/batch_run.js "./taxes/2025/*.xlsx" --pl --bs --save
 
 const args = process.argv.slice(2);
 if (args.length < 1) {
-    console.error('Usage: node batch_run.js "<glob_pattern>" [report_args...]');
+    console.error('Usage: node scripts/batch_run.js "<glob_pattern>" [report_args...]');
     process.exit(1);
 }
 
@@ -50,7 +52,7 @@ console.log(`[Batch Runner] Searching for files matching: "${pattern}"`);
             // User requested to ALWAYS ignore vendor.xlsx for batch runs BY DEFAULT,
             // but if they specify a custom --vendor-file, we should use it.
             const skipVendors = !passThroughArgs.includes('--vendor-file') && !passThroughArgs.includes('--ignore-vendors');
-            const command = `node report.js "${absPath}" ${passThroughArgs}${skipVendors ? ' --ignore-vendors' : ''}`;
+            const command = `node "${REPORT_JS}" "${absPath}" ${passThroughArgs}${skipVendors ? ' --ignore-vendors' : ''}`;
 
             console.log(`\n>>> [${index + 1}/${files.length}] Processing: ${file}`);
             console.log(`    Cmd: ${command}`);

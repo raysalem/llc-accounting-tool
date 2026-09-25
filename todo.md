@@ -47,7 +47,11 @@ Gaps, in priority order:
 
 ## Code
 
-- [ ] **Split `updateFinancials()`** (~2,800 lines) into modules: setup parsing, sheet processing, ledger, P&L/BS, 1099, printing. Unit-test the calculation parts directly.
+- [x] **Split `updateFinancials()`** into modules under `lib/report/` and `lib/output/`, and `load_transactions.js` into `lib/loader/`. Output was verified byte-for-byte identical on 102 report runs and 7 loader scenarios.
+- [ ] **Unit-test the calculation phases directly** (e.g. `buildReports`, `applySheetLinkage`) now that they are separate functions.
+- [ ] **Row processing is still one large closure** in `lib/report/transactions.js` (~370 lines) and `lib/report/ledger.js`. Splitting them further means rewriting them, not just moving code; do it with tests in place.
+- [ ] **Shared state:** phases share a mutable `ctx` object. Over time, have each phase return its results instead of writing into `ctx`.
+- [ ] **Dead code found during the split:** the 1099 section builds CSV text that is never written (`lib/report/print-1099.js`); `--save` fills a Summary sheet in the input workbook but never saves it (`lib/report/summary.js`); the end-balance check at the end of `lib/report/linkage.js` computes a difference it never uses. Either finish or remove each one. The "(Run with --save to update the Excel file)" hint is misleading: `--save` writes a separate report file.
 - [ ] **Remove dead code and stale comments.** Examples: "REDUNDANT BLOCK REMOVED", "The previous logic here (Lines 713-732)", "TODO: Replace this with table-based reading once tables are created".
 - [ ] **Setup parsing picks columns by header name.** Duplicate names across tables (`Type`, `Category`) are resolved by "first" vs "last" occurrence, which is how the template bug happened. Prefer the formal Excel tables (`CompanyInfo`, `Categories`, `Vendor`, `Customer`, `SheetInfo`) that the code already looks for, and make the template create them.
 - [ ] **The fallback sheet configs** (used when Setup has none) assume header row 1, but `load_transactions.js` writes the header in row 3.
@@ -56,14 +60,15 @@ Gaps, in priority order:
 - [ ] **Add ESLint and a formatter** and run them in CI. `.cursorrules` bans magic numbers and implicit conversions, but nothing enforces it.
 - [ ] **Silent `catch (e) { }` blocks** (e.g. `generate_excel.js:102`, several in `report.js`) hide real failures. Log them at least under `--debug`.
 - [ ] **The CSV parser in `load_transactions.js`** is a regex. It doesn't unescape `""` inside quoted fields and breaks on newlines inside quotes. Use a small CSV library, or document the limits. (`.cursorrules` currently forbids `csv-parser`; revisit that rule.)
-- [ ] **`glob` is only used by `batch_run.js`**, and `pdfkit` is required at runtime. Check both are still needed and list them in `DEPENDENCIES.md`.
+- [ ] **`glob` is only used by `scripts/batch_run.js`**, and `pdfkit` is required at runtime. Check both are still needed and list them in `DEPENDENCIES.md`.
 - [ ] **1099-INT threshold** is `0` (reports all interest). The IRS threshold is generally $10. Decide which you want and document it.
 - [ ] **Remember to update `DEFAULT_TAX_YEAR`** each January (or derive it from the current date minus one year during filing season).
 
 ## Repo hygiene
 
 - [ ] **Too many overlapping top-level docs:** `PROJECT_CONTEXT`, `FEATURE_SET`, `DEV_CHECKLIST`, `FUTURE_TASKS`, `SETUP_REQUIREMENTS`, `DEPENDENCIES`, `TESTING` and `ACCOUNTING_RULEBOOK`. Merge them into `README.md`, `docs/setup.md`, `docs/accounting-rules.md` and this file.
-- [ ] **Move one-off scripts** (`fix_garbage.js`, `inspect.js`, `monitor_booking.js`, `batch_run.js`) into `scripts/`, or delete the ones no longer used.
+- [x] **One-off scripts moved to `scripts/`.** `fix_garbage.js` was deleted; it patched text in the old `report.js`.
+- [ ] **`scripts/monitor_booking.js`** checks a campsite-booking website and is unrelated to this tool. Consider moving it to its own repo.
 - [ ] **Keep real data out of the repo going forward:** keep `.gitignore` covering `*.txt`, `*.xlsx` and `*.csv` outside `tests/` and `examples/`. Add a pre-commit hook that blocks bank-export file names and your NAS paths.
 - [ ] **Use descriptive commit messages** (not "minor" or "large chang set") so the history of an accounting tool can be audited.
 - [ ] **Version numbering:** now that the patch number no longer auto-increments, bump the version by hand on releases. Consider resetting to a meaningful version (e.g. 3.1.0).

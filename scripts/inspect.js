@@ -5,7 +5,7 @@ async function inspectFile() {
     const filename = process.argv[2] || 'LLC_Accounting_Template.xlsx';
     if (!fs.existsSync(filename)) {
         console.error(`Error: File '${filename}' not found.`);
-        console.log('Usage: node inspect.js <filename.xlsx>');
+        console.log('Usage: node scripts/inspect.js <filename.xlsx>');
         return;
     }
 
