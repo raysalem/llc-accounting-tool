@@ -2,6 +2,18 @@
 
 Notes from an outside review of the repo (September 2026), updated after the first round of fixes.
 
+## Decisions needed (from you)
+
+Each item changes behavior, so it waits for your call. The recommendation comes first.
+
+- [ ] **1. `--save` exit code.** `--save` exits 1 if any warning was printed ("[BATCH STOP]" in `lib/report/summary.js`), even harmless ones like "no vendor.xlsx found". Without `--save`, only errors and data-integrity issues fail the run. *Recommendation:* make them match, unless batch runs rely on the stricter rule.
+- [ ] **2. Summary sheet.** `--save` fills a Summary sheet in the input workbook but never saves the workbook (`lib/report/summary.js`), and the "(Run with --save to update the Excel file)" hint is misleading: `--save` writes a separate `report_<name>.xlsx`. *Recommendation:* remove the Summary code and fix the hint (alternative: actually save the Summary into the workbook).
+- [ ] **3. Should a `CRITICAL WARNING` fail the run?** For example, a transfer category used on the wrong sheet prints a `CRITICAL WARNING` but `report.js` still exits 0. *Recommendation:* yes, exit 1.
+- [ ] **4. Credit-card payments in 1099-NEC totals.** Payments made by credit card or through processors (PayPal, Upwork) are reported by the processor on a 1099-K, so they shouldn't count toward a contractor's 1099-NEC. Today all payments are added up, which can over-report. *Recommendation:* count only rows from `Bank`-type sheets. This changes 1099 numbers.
+- [ ] **5. 1099-INT threshold.** Currently `0` (all interest is listed); the IRS threshold is generally $10. *Recommendation:* your call; document whichever you pick in `docs/accounting-rules.md`.
+- [ ] **6. `scripts/monitor_booking.js`** checks a campsite-booking website and is unrelated to this tool. *Recommendation:* delete it from this repo (or move it to its own repo).
+- [ ] **7. CSV library.** The loader parses CSV with a regular expression, which mishandles quoted fields containing line breaks or `""`. *Recommendation:* allow a small CSV library and update the `.cursorrules` rule that currently forbids one (alternative: document the limits).
+
 ## Done in this round
 
 - [x] **Personal data removed from git history.** The bank statement CSV, 25+ `*.txt` debug/output files, the `.agent/tasks/` notes, `debug_headers.js`, `run_all_2025.bat` and ~12 one-off scripts with NAS paths were removed from every commit. Business names, the NAS address and the street address were replaced throughout. History was force-pushed.
@@ -44,7 +56,6 @@ Gaps, in priority order:
 - [x] **One test plan.** `TESTING.md` now has a coverage map (scenario → test file) and the expected numbers. `tests/EXPECTED_OUTCOME.md` was merged into it.
 - [x] **All sample books balance** and the tests expect exit 0 (except the `--save` step; see below).
 - [x] **Tests for `--vendor-file`, `--ignore-vendors`, `--all`, `--debug`** (`tests/test_vendor_file.js`).
-- [ ] **Decide the `--save` exit code.** `--save` exits 1 if any warning was printed ("[BATCH STOP]" in `lib/report/summary.js`), even harmless ones like "no vendor.xlsx found"; without `--save`, only errors and integrity issues fail the run. Make them consistent, or document why batch runs need the stricter rule.
 - [ ] **Many older checks look for a word in the console output** (e.g. `includes('TestVendor')`). Where possible, assert the number on the same line (see `valueFor()` in `test_transfers.js`), or read the saved `report_*.xlsx`.
 
 ## Code
@@ -55,30 +66,24 @@ Gaps, in priority order:
 - [ ] **Row processing is still one large closure** in `lib/report/transactions.js` (~370 lines) and `lib/report/ledger.js`. Splitting them further means rewriting them, not just moving code; do it with tests in place.
 - [ ] **Shared state:** phases share a mutable `ctx` object. Over time, have each phase return its results instead of writing into `ctx`.
 - [x] **Removed dead code:** the never-written 1099 CSV builder and the unused end-balance calculation in `linkage.js` (the real check is in `wallets.js`).
-- [ ] **`--save` fills a Summary sheet in the input workbook but never saves it** (`lib/report/summary.js`), and the "(Run with --save to update the Excel file)" hint is misleading: `--save` writes a separate `report_<name>.xlsx`. Decide: remove the Summary code and fix the hint, or actually save the Summary into the input workbook.
 - [x] **Stale comments removed** (old line references, "REDUNDANT BLOCK REMOVED", commented-out code, section numbers from the old single file).
 - [ ] **Setup parsing picks columns by header name.** Duplicate names across tables (`Type`, `Category`) are resolved by "first" vs "last" occurrence, which is how the template bug happened. Prefer the formal Excel tables (`CompanyInfo`, `Categories`, `Vendor`, `Customer`, `SheetInfo`) that the code already looks for, and make the template create them.
 - [x] **Fallback sheet configs** (used when Setup has none) now detect the header row instead of assuming row 1, so sheets filled by `load_transactions.js` (header on row 3) work. `tests/test_fallback_sheets.js`.
 - [ ] **The integrity checker ignores rows it can't read.** Rows with unparseable dates are skipped with a warning only under `--checker`. Consider always counting them as issues.
-- [ ] **Decide whether a `CRITICAL WARNING` should fail the run.** For example, a transfer category used on the wrong sheet prints a `CRITICAL WARNING` but `report.js` still exits 0.
 - [x] **ESLint** (`npm run lint`, `eslint.config.js`) runs in CI; the codebase passes with no errors. It fixed or removed ~50 issues, mostly unused variables and dead code.
 - [ ] **Formatter:** consider adding Prettier. Also consider stricter rules (e.g. `no-magic-numbers`) to enforce `.cursorrules`.
 - [x] **Silent errors:** a transaction or ledger row that throws is now always reported and fails the run (before, only under `--checker`). Empty `catch` blocks are gone; ESLint's `no-empty` rule keeps it that way.
-- [ ] **The CSV parser in `load_transactions.js`** is a regex. It doesn't unescape `""` inside quoted fields and breaks on newlines inside quotes. Use a small CSV library, or document the limits. (`.cursorrules` currently forbids `csv-parser`; revisit that rule.)
 - [x] **Dependencies documented** in `docs/development.md` (`exceljs`, optional `pdfkit`, `glob` for `scripts/batch_run.js`, ESLint for development).
-- [ ] **1099-INT threshold** is `0` (reports all interest). The IRS threshold is generally $10. Decide which you want and document it.
 - [ ] **Remember to update `DEFAULT_TAX_YEAR`** each January (or derive it from the current date minus one year during filing season).
 
 ## Accounting (from the old FUTURE_TASKS.md)
 
-- [ ] **Exclude credit-card payments from 1099-NEC totals.** Payments made by credit card or through processors (PayPal, Upwork) are reported by the processor on a 1099-K, so they shouldn't count toward a vendor's 1099-NEC. Today all payments are added up, which can over-report. Only add rows from `Bank`-type sheets to the 1099 stats.
 - [ ] **Keep the hard stops.** Never loosen the checks that refuse to produce a report when the ledger is unbalanced, a ledger row has no date, or an account's calculated end balance doesn't match its End Balance.
 
 ## Repo hygiene
 
 - [x] **Docs consolidated** into `README.md` and `docs/` (`setup.md`, `features.md`, `accounting-rules.md`, `development.md`, `testing.md`), with stale content corrected. `FUTURE_TASKS.md` items moved into this file. `.cursorrules` points at the new docs.
 - [x] **One-off scripts moved to `scripts/`.** `fix_garbage.js` was deleted; it patched text in the old `report.js`.
-- [ ] **`scripts/monitor_booking.js`** checks a campsite-booking website and is unrelated to this tool. Consider moving it to its own repo.
 - [x] **Personal-data guard:** `scripts/check-sensitive.js` runs as a pre-commit hook (enabled by `npm install`) and in CI. `.gitignore` now also covers `*.csv`, `*.pdf`, `*.xls` and `*.lnk` outside `tests/`.
 - [ ] **Use descriptive commit messages** (not "minor" or "large chang set") so the history of an accounting tool can be audited.
 - [ ] **Version numbering:** now that the patch number no longer auto-increments, bump the version by hand on releases. Consider resetting to a meaningful version (e.g. 3.1.0).
