@@ -70,7 +70,25 @@ function run(file, ...flags) {
     return { code: r.status, output: r.stdout + r.stderr };
 }
 
+// validateWallets directly: an unlinked "credit card" sheet still needs an End Balance,
+// and an unreadable End Balance (NaN) counts as missing, not as a match.
+async function testWalletRules() {
+    const { validateWallets } = require('../lib/report/wallets');
+    const ctx = {
+        catStats: {}, processedSheetTotals: { Visa: 0 }, showChecker: false, uniqueCategories: new Map(),
+        sheetConfigs: [{ name: 'Visa', shortName: 'Visa', type: 'credit card', startBalance: 0, endBalance: NaN, linkedAccount: null }],
+    };
+    const origError = console.error;
+    console.error = () => {};
+    await validateWallets(ctx);
+    console.error = origError;
+    check('Unlinked "credit card" sheet is required', ctx.reconciliation.total === 1, JSON.stringify(ctx.reconciliation));
+    check('NaN End Balance counts as missing', ctx.reconciliation.missing.includes('Visa') && ctx.hasErrors === true, JSON.stringify(ctx.reconciliation));
+}
+
 async function main() {
+    await testWalletRules();
+
     // --- All reconciled ---
     const good = path.join(TMP, 'good.xlsx');
     await buildWorkbook(good, [900, 200, 80]);
