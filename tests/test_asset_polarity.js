@@ -53,6 +53,8 @@ async function createTestWorkbook() {
     setup.getCell('Q2').value = 'Bank'; // Links to Category 'Bank'
     setup.getCell('R2').value = 1;
     setup.getCell('S2').value = 10000;
+    setup.getCell('T1').value = 'EndBalance';
+    setup.getCell('T2').value = 7500; // 10000 start - 1000 - 1000 (sheet rows) - 500 (ledger credit)
 
     // 2. Ledger
     wb.addWorksheet('Ledger').addRow(['Date', 'Description', 'Category', 'Debit', 'Credit']);

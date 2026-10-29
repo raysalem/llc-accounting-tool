@@ -26,7 +26,7 @@ async function createTestWorkbook() {
     // Setup sheet
     const setup = wb.addWorksheet('Setup');
     setup.getRow(1).values = ['Category', 'Sub-Category', 'Type', 'Report', '', '', 'Vendors', '1099', 'Customers',
-        'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset'];
+        'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset', 'End Balance'];
 
     // Categories
     setup.getRow(2).values = ['Services', '', 'Expense', 'P&L'];
@@ -34,7 +34,8 @@ async function createTestWorkbook() {
     setup.getRow(4).values = ['Owner Equity', '', 'Equity', 'Balance Sheet'];
 
     // Sheet config: the bank sheet feeds the Checking account, so the books balance
-    ['Bank Transactions', 'Bank', 'No', 1, 'Checking'].forEach((v, i) => { setup.getRow(2).getCell(10 + i).value = v; });
+    // End Balance 700 = -700 - 500 - 100 + 0 + 2000 (the five bank rows)
+    ['Bank Transactions', 'Bank', 'No', 1, 'Checking', 700].forEach((v, i) => { setup.getRow(2).getCell(10 + i).value = v; });
 
     // Vendors with 1099 status
     setup.getRow(2).getCell(7).value = 'Vendor A'; // Will pay $700 (NEC, should be required)

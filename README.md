@@ -115,7 +115,7 @@ The tool validates every transaction during the report generation process:
    node generate_excel.js
    ```
 2. **Configure your accounts**:
-   Open the generated `LLC_Accounting_Template.xlsx`, go to the **Setup** tab, and define your sheet names, polarity preferences, and **Header Row** offset (useful if your bank export has extra rows at the top).
+   Open the generated `LLC_Accounting_Template.xlsx`, go to the **Setup** tab, and define your sheet names, polarity preferences, and **Header Row** offset (useful if your bank export has extra rows at the top). Enter each bank and card statement's ending balance in the **End Balance** column: it is required, and `report.js` fails with `UNRECONCILED` when it is missing or does not match.
 3. **Import Transactions**:
    Use `load_transactions.js` to bring in your bank or CC data.
 4. **Update Financials**:
@@ -138,8 +138,11 @@ node report.js My_Books.xlsx --bs --year=2026 --opening-balances opening-balance
 - Accounts linked to a sheet become that sheet's starting balance; others are added to the account's balance. The difference goes to "Retained Earnings (Opening Balance)" so A = L + E still holds.
 - A bad file (invalid TOML, duplicate or unknown keys, text instead of a number, an unknown or P&L category, a conflicting StartBalance) stops the run with exit code 1 and lists every problem.
 
+### Report Stamp
+Every run starts by printing what the report is made from: tool version, git commit, run time, the command-line arguments, tax year, and the SHA-256 (first 12 hex digits) and size of each input file (workbook, opening-balances file, vendor file). `--save` repeats it in the **Report Info** sheet and on the PDF title page, so a saved report can be traced to the exact files that produced it. A one-line `Reconciliation: N of N accounts match their End Balance` summary is printed on every run.
+
 ### Exit Codes
-`report.js` exits with code **1** when the books have critical errors (for example an unbalanced balance sheet or ledger, or incomplete 1099 vendor details) or data-integrity issues (uncategorized rows, unknown categories, vendors or customers). Otherwise it exits 0, so scripts and CI can detect problems.
+`report.js` exits with code **1** when the books have critical errors (for example an unbalanced balance sheet or ledger, a missing or mismatched End Balance, or incomplete 1099 vendor details) or data-integrity issues (uncategorized rows, unknown categories, vendors or customers). Otherwise it exits 0, so scripts and CI can detect problems.
 
 ### Amount Formats
 Both `load_transactions.js` and `report.js` read amounts such as `$1,234.56`, `(1,234.56)` (negative), `1,234.56-` and `100.00 CR`. Text that is not a number is reported and skipped, never treated as 0.
@@ -186,7 +189,8 @@ Supporting code:
 | `lib/report/context.js` | Shared state passed between the report phases |
 | `lib/report/setup.js`, `sheet-config.js`, `external-vendors.js` | Read the Setup sheet and optional `vendor.xlsx` / `vendor.csv` |
 | `lib/report/transactions.js`, `sheet-columns.js`, `columns.js`, `linkage.js` | Process transaction sheets and apply each sheet's total to its linked account |
-| `lib/report/ledger.js`, `wallets.js` | Process the Ledger sheet; check ending balances |
+| `lib/report/ledger.js`, `wallets.js` | Process the Ledger sheet; check ending balances (End Balance required) |
+| `lib/report/stamp.js` | The report stamp (version, git commit, run time, flags, input file hashes) shown on the console, Report Info sheet and PDF |
 | `lib/report/build-reports.js` | Build P&L, balance sheet, vendor and customer report rows |
 | `lib/report/print-statements.js`, `print-1099.js`, `format-table.js`, `diagnostics.js` | Console output and final status |
 | `lib/report/summary.js`, `lib/output/` | `--save`: Excel report and PDF |

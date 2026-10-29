@@ -12,8 +12,8 @@ async function verifySubCatLogic() {
 
     // 1. Setup Sheet (sub-categories listed; the bank sheet feeds Checking, so the books balance)
     const setup = workbook.addWorksheet('Setup');
-    setup.addRow(['Category', 'Sub-Category', 'Account Type', 'Report', 'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset']);
-    setup.addRow(['Cat_Multi', 'SubA', 'Expense', 'P&L', 'Bank Transactions', 'Bank', 'No', 1, 'Checking']);
+    setup.addRow(['Category', 'Sub-Category', 'Account Type', 'Report', 'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset', 'End Balance']);
+    setup.addRow(['Cat_Multi', 'SubA', 'Expense', 'P&L', 'Bank Transactions', 'Bank', 'No', 1, 'Checking', 800]); // End Balance 800 = 2000 - 100 - 200 - 300 - 40 - 60 - 500
     setup.addRow(['Cat_Multi', 'SubB', 'Expense', 'P&L']);
     setup.addRow(['Cat_OnlyNoSub', '', 'Expense', 'P&L']);
     setup.addRow(['Cat_Mixed', 'SubC', 'Expense', 'P&L']);

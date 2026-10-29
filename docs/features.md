@@ -35,12 +35,21 @@ Every feature listed here should have a test. Gaps are marked ⚠️ and tracked
 | `--debug` | Verbose output. | `test_vendor_file.js` |
 | `--help` | Usage. | `test_arguments_coverage.js` |
 
-**Exit code:** `report.js` exits 1 on critical errors (unbalanced ledger or balance sheet, a ledger row without a date, incomplete 1099 vendor details, a row that fails to process) or data-integrity issues. Otherwise 0.
+**Exit code:** `report.js` exits 1 on critical errors (unbalanced ledger or balance sheet, a ledger row without a date, incomplete 1099 vendor details, a row that fails to process, a missing or mismatched End Balance) or data-integrity issues. Otherwise 0.
+
+## Reconciliation and Report Stamp
+
+| Feature | Description | Test |
+|---|---|---|
+| End Balance required | Every Bank/CC sheet (and any sheet linked to a Balance Sheet account) needs the statement's ending balance in `Setup` (SheetInfo). The calculated balance must match it within 0.05. A missing End Balance prints `UNRECONCILED: "<sheet>" has no End Balance in Setup` and exits 1; an explicit `0` is valid (empty and 0 are different); a mismatch prints `END BALANCE MISMATCH` and exits 1. All problems are listed together. The Ledger sheet is exempt, and so are the default sheets used when Setup has no sheet configuration. | `test_reconciliation.js` |
+| Reconciliation summary | One line on every run: `Reconciliation: 3 of 3 accounts match their End Balance` or `Reconciliation: 1 of 3 accounts match (1 mismatch, 1 missing End Balance)`. | `test_reconciliation.js` |
+| Report stamp | What the report was made from: tool version, git commit (`+dirty` if the tool's checkout has uncommitted changes, `unknown` if git is unavailable), run time (ISO, local time zone), the command-line arguments as given, tax year, and the SHA-256 (first 12 hex digits) and size of every input file read (workbook, `--opening-balances` file, vendor file). Built once in `lib/report/stamp.js`; printed under `Report stamp:` at the top of every run, added to the `--save` Report Info sheet and printed on the PDF title page. | `test_reconciliation.js` |
 
 ## Accounting Rules
 
 - **Polarity:** money into an asset is positive, money out is negative. Sheets with Flip Polarity = Yes are multiplied by −1 first.
 - **Transfers:** rows categorized with a `Transfer` category are left out of the linked account's balance, so a credit-card payment recorded on both the bank and card sheets is counted once. See `docs/accounting-rules.md` Part 5. (`test_transfers.js`)
+- **Statement balances:** each bank/card sheet is proven against its statement's ending balance (End Balance), see above. (`test_reconciliation.js`)
 - **Ledger:** debits increase assets and expenses; credits increase income, liabilities and equity. Debits must equal credits and every row needs a date, or the run stops. (`test_ledger_strictness.js`, `test_ledger_unbalanced.js`)
 - **Category validation:** P&L categories must be `Income` or `Expense`; balance-sheet categories must be `Asset`, `Liability` or `Equity`. Violations print `CRITICAL CONFIG ERROR`.
 - **Asset polarity:** linked assets (bank sheets) use natural polarity. Unlinked assets (purchases) are inverted: spending increases the asset. (`test_asset_polarity.js`)

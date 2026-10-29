@@ -6,7 +6,7 @@ npm test
 ```
 `tests/run_all.js` runs every test file and exits non-zero if any fail. CI runs it on every push and pull request to `main` (Node 20 and 22).
 
-All sample books balance, so tests expect `report.js` to exit 0 unless they are testing an error. Tests write their workbooks to a temporary directory, so a test run never changes files in the repo. To refresh the committed example `tests/Full_Accounting_Test_Case.xlsx`, run `SAVE_ARTIFACT=1 node tests/run_integration_test.js`.
+All sample books balance and every Bank/CC sheet carries the correct End Balance (computed from the test's own data, with a comment showing the math), so tests expect `report.js` to exit 0 unless they are testing an error. A test that runs the same book for a different year or without `--opening-balances` does not reconcile and does not assert the exit code. Tests write their workbooks to a temporary directory, so a test run never changes files in the repo. To refresh the committed example `tests/Full_Accounting_Test_Case.xlsx`, run `SAVE_ARTIFACT=1 node tests/run_integration_test.js`.
 
 ## Coverage Map
 
@@ -27,6 +27,8 @@ All sample books balance, so tests expect `report.js` to exit 0 unless they are 
 | Reports | `--details` includes Ledger rows and doesn't change totals | `test_details_ledger.js` |
 | CLI | `load_transactions.js` append / `--clear` / `--help`; `report.js` flags and `--save` | `test_arguments_coverage.js` |
 | CLI | `--vendor-file`, `vendor.csv` next to the workbook, `--ignore-vendors`, `--all`, `--debug` | `test_vendor_file.js` |
+| Reconciliation | End Balance required for Bank/CC sheets: all match, one missing, explicit 0, mismatch, mixed counts in the summary line | `test_reconciliation.js` |
+| Report stamp | Version, git commit, run time, flags, tax year and workbook SHA-256/size on the console and in the `--save` Report Info sheet | `test_reconciliation.js` |
 | Setup | No sheet configuration in Setup: default sheets are used and their header row is found | `test_fallback_sheets.js` |
 
 ## Integration Test (`run_integration_test.js`)

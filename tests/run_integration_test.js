@@ -81,6 +81,12 @@ async function runTest() {
     newRow.getCell(colVend).value = 'Contractor 1099';
     newRow.getCell(col1099Type).value = 'NEC';
 
+    // End Balance is required for the Bank and Credit Card sheets (template rows 4 and 5, column M).
+    // Bank: 5000 - 1500 + 2500 - 737.50 + 1000 - 50 (ledger) = 6212.50; CC liability: 15.50 + 120 + 45 = 180.50.
+    const END_BALANCE_COL = 13;
+    setupSheet.getRow(4).getCell(END_BALANCE_COL).value = 6212.50;
+    setupSheet.getRow(5).getCell(END_BALANCE_COL).value = 180.50;
+
     console.log('\n--- Phase 5: Add Ledger Entries (balanced) ---');
     const ledgerSheet = workbook.getWorksheet('Ledger');
     // Date, Desc, Category, Debit, Credit
@@ -125,6 +131,8 @@ async function runTest() {
     const dirtyBank = workbook.getWorksheet('Bank Transactions');
     dirtyBank.addRow([new Date('2025-01-25'), 'Mystery Corp', 100, 'IllegalCat', '', '', 'UnknownVendor', '']);
     dirtyBank.addRow([new Date('2025-01-26'), 'Uncategorized Expense', 50, '', '', '', '', '']);
+    // Keep the statement balance in step with the two added rows (+100, +50), so only the bad data fails the run.
+    workbook.getWorksheet('Setup').getRow(4).getCell(END_BALANCE_COL).value = 6362.50;
     await workbook.xlsx.writeFile(TEST_FILE);
 
     const dirty = runReport('--checker --year=2025');

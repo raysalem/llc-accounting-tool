@@ -33,13 +33,14 @@ function runReport(file, flags) {
 }
 
 // Bank rows and Amex rows are [date, description, amount, category].
-async function buildWorkbook(file, bankRows, amexRows) {
+// endBalances = [bank, amex] statement ending balances for the Setup sheet.
+async function buildWorkbook(file, bankRows, amexRows, endBalances) {
     const wb = new ExcelJS.Workbook();
     const setup = wb.addWorksheet('Setup');
     setup.addRow([
         'Category', 'Sub-Category', 'Account Type', 'Report', 'Transfer Account',
         'Vendors', 'Customers',
-        'Sheet Name', 'Type', 'Flip', 'Offset', 'Short Name', 'Link Asset'
+        'Sheet Name', 'Type', 'Flip', 'Offset', 'Short Name', 'Link Asset', 'End Balance'
     ]);
     const categories = [
         ['Sales', '', 'Income', 'P&L'],
@@ -51,10 +52,10 @@ async function buildWorkbook(file, bankRows, amexRows) {
     ];
     categories.forEach((c, i) => c.forEach((v, j) => { setup.getRow(i + 2).getCell(j + 1).value = v; }));
 
-    // Sheet config (columns H-M)
+    // Sheet config (columns H-N)
     const sheets = [
-        ['Bank', 'Bank', 'No', 1, 'Bank', 'Checking'],
-        ['Amex', 'CC', 'Yes', 1, 'Amex', 'AX CC'],
+        ['Bank', 'Bank', 'No', 1, 'Bank', 'Checking', endBalances[0]],
+        ['Amex', 'CC', 'Yes', 1, 'Amex', 'AX CC', endBalances[1]],
     ];
     sheets.forEach((s, i) => s.forEach((v, j) => { setup.getRow(i + 2).getCell(8 + j).value = v; }));
 
@@ -92,7 +93,8 @@ async function main() {
             [new Date('2025-02-03'), 'Office supplies', 300, 'Office Supplies'],
             [new Date('2025-02-15'), 'Payment received', -100, 'Transfer AX CC'],
             [new Date('2025-02-20'), 'Supplies refund', -50, 'Office Supplies'],
-        ]);
+        ],
+        [900, 150]); // Checking 1000 - 100; AX CC 300 - 50 - 100 (the payment counts once, from the bank side)
 
     const r = runReport(good, '--pl --bs');
     const out = r.output;
@@ -113,7 +115,10 @@ async function main() {
         ],
         [
             [new Date('2025-02-03'), 'Office supplies', 300, 'Office Supplies'],
-        ]);
+        ],
+        // Statement balances: Checking 1000 - 100 = 900, Amex 300. The misfiled transfer is left out of
+        // Checking (1000 calculated), so this book intentionally does not reconcile; only the warning is asserted.
+        [900, 300]);
     const w = runReport(wrong, '--bs');
     check('Transfer on wrong sheet raises CRITICAL WARNING',
         /CRITICAL WARNING.*"Transfer AX CC" expects Transfer Account "AX CC".*Sheet "Bank"/.test(w.output));

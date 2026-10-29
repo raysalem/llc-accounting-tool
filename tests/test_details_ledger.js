@@ -20,8 +20,8 @@ function check(label, ok, detail = '') {
 async function build() {
     const wb = new ExcelJS.Workbook();
     const setup = wb.addWorksheet('Setup');
-    setup.addRow(['Category', 'Sub-Category', 'Account Type', 'Report', 'Vendors', 'Sheet Name', 'Type', 'Flip', 'Offset', 'Link Asset']);
-    setup.addRow(['Office', '', 'Expense', 'P&L', 'Staples', 'Bank', 'Bank', 'No', 1, 'Checking']);
+    setup.addRow(['Category', 'Sub-Category', 'Account Type', 'Report', 'Vendors', 'Sheet Name', 'Type', 'Flip', 'Offset', 'Link Asset', 'End Balance']);
+    setup.addRow(['Office', '', 'Expense', 'P&L', 'Staples', 'Bank', 'Bank', 'No', 1, 'Checking', 450]); // End Balance 450 = 500 - 50 (the ledger entry doesn't touch Checking)
     setup.addRow(['Checking', '', 'Asset', 'Balance Sheet']);
     setup.addRow(['Owner Equity', '', 'Equity', 'Balance Sheet']);
 

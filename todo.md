@@ -78,6 +78,8 @@ Gaps, in priority order:
 
 ## Accounting (from the old FUTURE_TASKS.md)
 
+- [ ] **End Balance for the default sheets.** When Setup has no sheet configuration, the default Bank/Credit Card sheets are used and are exempt from the required End Balance (there is no Setup row to put it in). Decide whether a book with no sheet configuration should fail instead.
+- [ ] **Dead code in `diagnostics.js`.** The `--- WALLET RECONCILIATION ---` block reads `ctx.walletCheckResults`, which nothing fills; the live table is printed by `wallets.js` under `--checker`.
 - [ ] **Keep the hard stops.** Never loosen the checks that refuse to produce a report when the ledger is unbalanced, a ledger row has no date, or an account's calculated end balance doesn't match its End Balance.
 
 ## Repo hygiene

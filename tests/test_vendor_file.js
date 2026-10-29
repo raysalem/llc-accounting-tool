@@ -26,9 +26,9 @@ async function build() {
     const wb = new ExcelJS.Workbook();
     const setup = wb.addWorksheet('Setup');
     setup.addRow(['Category', 'Sub-Category', 'Account Type', 'Report', 'Vendors', '1099 Type',
-        'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset', 'Company Info', 'Value']);
+        'Sheet Name', 'Sheet Type', 'Flip', 'Offset', 'Link Asset', 'Company Info', 'Value', 'End Balance']);
     setup.addRow(['Contract Labor', '', 'Expense', 'P&L', 'Jane Contractor', 'NEC',
-        'Bank', 'Bank', 'No', 1, 'Checking', 'Company Name', 'Example LLC']);
+        'Bank', 'Bank', 'No', 1, 'Checking', 'Company Name', 'Example LLC', 3800]); // End Balance 3800 = 5000 - 1200
     setup.addRow(['Checking', '', 'Asset', 'Balance Sheet', '', '', '', '', '', '', '', 'TIN', '12-3456789']);
     setup.addRow(['Owner Equity', '', 'Equity', 'Balance Sheet']);
 

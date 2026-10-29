@@ -39,6 +39,7 @@ async function createTemplate() {
         { header: 'Sheet Type', key: 'sheettype', width: 15 },
         { header: 'Flip Polarity? (Yes/No)', key: 'flip', width: 20 },
         { header: 'Header Row', key: 'offset', width: 15 },
+        { header: 'End Balance', key: 'endbalance', width: 15 },
     ];
 
     const categories = [
@@ -56,12 +57,16 @@ async function createTemplate() {
     setupSheet.getCell('J4').value = 'Bank';
     setupSheet.getCell('K4').value = 'No';
     setupSheet.getCell('L4').value = 3; // load_transactions.js puts TOTAL/SUBTOTAL in rows 1-2
+    // End Balance is required for every bank/card sheet. 0 is right for the empty template;
+    // after loading a statement, enter that statement's ending balance.
+    setupSheet.getCell('M4').value = 0;
 
     // Row 5 corresponds to 'Credit Card'
     setupSheet.getCell('I5').value = 'Credit Card Transactions';
     setupSheet.getCell('J5').value = 'CC';
     setupSheet.getCell('K5').value = 'Yes'; // Default to Yes for CC
     setupSheet.getCell('L5').value = 3;
+    setupSheet.getCell('M5').value = 0;
 
     // Add some sample vendors/customers
     setupSheet.getCell('F2').value = 'Starbucks';

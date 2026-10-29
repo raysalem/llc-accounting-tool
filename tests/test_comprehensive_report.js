@@ -36,7 +36,7 @@ async function createTestData() {
         'Customers',
         '',
         'Sheet Name', 'Type', 'Flip', 'Offset', 'Short Name',
-        'Company Info', 'Value'
+        'Company Info', 'Value', 'End Balance'
     ]);
 
     // Data rows
@@ -81,6 +81,9 @@ async function createTestData() {
     };
     setSheet(15, 'Bank ABC', 'Bank', 'No', 1, 'Bank');
     setSheet(16, 'CC Amex', 'CC', 'Yes', 1, 'Amex');
+    // End Balance (col W): bank 5000 - 2000 - 50 - 800 - 1 + 10 (ledger Dr Cash) = 2159; Amex 150 + 1200 = 1350
+    setup.getCell('W15').value = 2159;
+    setup.getCell('W16').value = 1350;
     setSheet(17, 'Ledger', 'Ledger', 'No', 1, 'Ledger');
 
     // Payer Info (Col U-V, starting at Row 15)

@@ -106,6 +106,9 @@ async function testArguments() {
     const setupSheet = wb.getWorksheet('Setup');
     setupSheet.getCell('F5').value = 'TestVendor';
     setupSheet.getCell('G5').value = 'TestCust';
+    // End Balance (template column M) is required: the bank statement holds the one -50 row, the card has none
+    setupSheet.getCell('M4').value = -50;
+    setupSheet.getCell('M5').value = 0;
     await wb.xlsx.writeFile(TARGET_FILE);
 
     // 5. Test: --vendor

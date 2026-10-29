@@ -50,6 +50,14 @@ async function loadAndRead(tz) {
     return { book, rows };
 }
 
+// Writes the bank statement's ending balance into the template's Setup sheet (End Balance, row 4, column M).
+async function setBankEndBalance(book, value) {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(book);
+    wb.getWorksheet('Setup').getCell('M4').value = value;
+    await wb.xlsx.writeFile(book);
+}
+
 async function main() {
     for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
         const { book, rows } = await loadAndRead(tz);
@@ -59,9 +67,11 @@ async function main() {
             check(`[${tz}] ${exp.desc}: amount ${exp.amount}`, got && got.amount === exp.amount, got ? `got ${got.amount}` : 'row missing');
         }
 
-        // Each tax year sees only its own two rows.
+        // Each tax year sees only its own two rows, so each year has its own statement ending balance.
+        await setBankEndBalance(book, 1234.56 - 50); // 2025: deposit and fee
         const r25 = spawnSync(process.execPath, ['report.js', book, '--year=2025', '--pl'], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, TZ: tz } });
         check(`[${tz}] 2025 report skips the two 2026 rows`, r25.stdout.includes('Skipped 2 transaction row(s) dated outside 2025'));
+        await setBankEndBalance(book, -1000 + 25); // 2026: charge and deposit
         const r26 = spawnSync(process.execPath, ['report.js', book, '--year=2026', '--pl'], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, TZ: tz } });
         check(`[${tz}] 2026 report skips the two 2025 rows`, r26.stdout.includes('Skipped 2 transaction row(s) dated outside 2026'));
     }

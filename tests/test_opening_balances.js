@@ -153,14 +153,14 @@ function testResolution() {
 }
 
 // Setup uses header-row detection (see docs/setup.md). Columns A-G are the Categories table,
-// H-N the SheetInfo table.
+// H-O the SheetInfo table.
 async function buildWorkbook(file) {
     const wb = new ExcelJS.Workbook();
     const setup = wb.addWorksheet('Setup');
     setup.addRow([
         'Category', 'Sub-Category', 'Account Type', 'Report', 'Transfer Account',
         'Vendors', 'Customers',
-        'Sheet Name', 'Type', 'Flip', 'Offset', 'Short Name', 'Link Asset', 'Start Balance',
+        'Sheet Name', 'Type', 'Flip', 'Offset', 'Short Name', 'Link Asset', 'Start Balance', 'End Balance',
     ]);
     const categories = [
         ['Sales', '', 'Income', 'P&L'],
@@ -172,6 +172,8 @@ async function buildWorkbook(file) {
     ];
     categories.forEach((c, i) => c.forEach((v, j) => { setup.getRow(i + 2).getCell(j + 1).value = v; }));
     ['Bank', 'Bank', 'No', 1, 'Bank', 'Bank'].forEach((v, j) => { setup.getRow(2).getCell(8 + j).value = v; });
+    // End Balance (col O) = 1000 opening (from the file) - 500 - 400. It only reconciles with --opening-balances.
+    setup.getRow(2).getCell(15).value = 100;
 
     const bank = wb.addWorksheet('Bank');
     bank.addRow(['Date', 'Description', 'Amount', 'Category']);
@@ -216,6 +218,7 @@ async function testEndToEnd() {
     }
 
     // Without the flag nothing changes: the unlinked accounts hold only this year's activity.
+    // (Bank no longer reconciles to its End Balance of 100 here, since it has no opening balance, so exit code 1 is expected and not asserted.)
     const plain = runReport(wbFile, []);
     check('Without the flag: Mortgage = -500 (unchanged behavior)', valueFor(plain.output, 'Mortgage') === -500, `got ${valueFor(plain.output, 'Mortgage')}`);
 

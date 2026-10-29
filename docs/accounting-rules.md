@@ -46,7 +46,13 @@ node report.js My_Books.xlsx --checker --year=2025
     -   *Fix*: Assign a category (e.g., "Contract Labor").
 3.  **"Illegal Category"**: You typed a category that doesn't exist in Setup.
 
-### 2.2 Verify Vendor Spending
+### 2.2 Enter Each Statement's Ending Balance
+For every bank and credit-card sheet, copy the **ending balance** from that account's December statement into the **End Balance** column of its row in the `Setup` sheet-config table. Every run compares it with the balance the tool calculates (start + sheet + ledger):
+- **Missing** End Balance: `UNRECONCILED`, exit 1.
+- **Mismatch**: `END BALANCE MISMATCH` with both numbers. Find the missing or duplicated transaction before you trust any report.
+- The summary line `Reconciliation: N of N accounts match their End Balance` should read all matched. A balance of `0` is valid; enter it, don't leave the cell empty.
+
+### 2.3 Verify Vendor Spending
 Run the vendor report to see total "Net Expenses" per vendor:
 ```bash
 node report.js My_Books.xlsx --vendor --year=2025

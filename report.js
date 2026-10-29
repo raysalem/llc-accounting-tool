@@ -14,7 +14,7 @@ const { loadOpeningBalancesFile, resolveOpeningBalances } = require('./lib/openi
 const { createContext } = require('./lib/report/context');
 const { readSetup } = require('./lib/report/setup');
 const { readSheetConfigs } = require('./lib/report/sheet-config');
-const { loadExternalVendors } = require('./lib/report/external-vendors');
+const { loadExternalVendors, findVendorFile } = require('./lib/report/external-vendors');
 const { processTransactionSheets } = require('./lib/report/transactions');
 const { processLedger } = require('./lib/report/ledger');
 const { validateWallets } = require('./lib/report/wallets');
@@ -22,9 +22,11 @@ const { buildReports } = require('./lib/report/build-reports');
 const { printStatements } = require('./lib/report/print-statements');
 const { printDiagnostics } = require('./lib/report/diagnostics');
 const { writeSummaryAndSave } = require('./lib/report/summary');
+const { buildStamp, stampLines } = require('./lib/report/stamp');
 
 async function updateFinancials() {
-    const opts = parseArgs(process.argv.slice(2));
+    const args = process.argv.slice(2);
+    const opts = parseArgs(args);
     if (opts.help) return;
     const { showDebug, taxYear, THRESHOLD_1099_NEC } = opts;
 
@@ -34,7 +36,8 @@ async function updateFinancials() {
     let filename = opts.filename;
     const originalInputPath = filename; // Store original input for path resolution
 
-    // Resolve shortcut if needed
+    // Resolve shortcut if needed, then print the report stamp (what this report is made from)
+    let stamp = null;
     if (fs.existsSync(filename)) {
         const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
         console.log(`LLC Accounting Tool v${pkg.version}`);
@@ -44,6 +47,16 @@ async function updateFinancials() {
         if (resolved !== filename) {
             if (showDebug) console.log(`Resolved shortcut '${filename}' -> '${resolved}'`);
             filename = resolved;
+        }
+
+        if (fs.existsSync(filename)) {
+            const inputs = [{ role: 'Workbook', path: filename }];
+            if (opts.openingBalancesPath) inputs.push({ role: 'Opening balances', path: opts.openingBalancesPath });
+            const vendorFile = opts.ignoreVendors ? null : findVendorFile({ customVendorFile: opts.customVendorFile, filename, originalInputPath });
+            if (vendorFile) inputs.push({ role: 'Vendor file', path: vendorFile });
+            stamp = buildStamp({ args, taxYear, inputs });
+            console.log('Report stamp:');
+            stampLines(stamp).forEach(line => console.log(line));
         }
     }
 
@@ -84,7 +97,7 @@ async function updateFinancials() {
     }
 
     const ctx = createContext({
-        ...opts, filename, originalInputPath, workbook, setupSheet, ledgerSheet, summarySheet,
+        ...opts, filename, originalInputPath, workbook, setupSheet, ledgerSheet, summarySheet, stamp,
     });
 
     await readSetup(ctx);

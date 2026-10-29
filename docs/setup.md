@@ -47,7 +47,7 @@ The "Setup" sheet is the brain of the application. It processes **5 distinct tab
     | `Header Row` / `Offset` | Row number of the column headers. Sheets filled by `load_transactions.js` use row 3 (rows 1-2 hold TOTAL and SUBTOTAL). |
     | `LinkAsset` / `Category` | For Asset/Liab sheets: The Balance Sheet Account name it reconciles to. |
     | `StartBalance` | Beginning balance ($) for the period. |
-    | `EndBalance` | Ending balance ($) for validation. |
+    | `EndBalance` | **Required** for every `Bank` or `CC` sheet and every sheet linked to a Balance Sheet account: the ending balance on the statement for the tax year. The calculated balance (start + sheet + ledger) must match it. Empty is an error (`UNRECONCILED`, exit 1); `0` is a valid balance. Not needed for the Ledger sheet. The template from `generate_excel.js` has an `End Balance` column set to 0; enter the real figure after loading a statement. |
     | `ShortName` | Abbreviated name for columns in detailed reports. |
 
 ## 5. Company Info (Payer) Table

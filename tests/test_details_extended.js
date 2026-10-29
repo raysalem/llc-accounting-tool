@@ -38,6 +38,8 @@ async function createTestWorkbook() {
     setup.getRow(2).getCell(16).value = 'Asset';
     setup.getRow(2).getCell(17).value = 'Bank';
     setup.getRow(2).getCell(18).value = 1;
+    setup.getRow(1).getCell(19).value = 'EndBalance';
+    setup.getRow(2).getCell(19).value = 0; // -10 - 20 + 30
 
     // 2. Ledger
     wb.addWorksheet('Ledger').getRow(1).values = ['Date', 'Description', 'Category', 'Debit', 'Credit'];

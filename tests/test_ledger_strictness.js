@@ -18,8 +18,8 @@ async function createTestFile() {
 
     // Setup Sheet
     const setup = workbook.addWorksheet('Setup');
-    setup.addRow(['Category', 'Type', 'Report', 'SheetName', 'Type', 'ShortName', 'FlipPolarity']);
-    setup.addRow(['Office Supplies', 'Expense', 'P&L', 'Bank', 'Bank', 'Bank', 'No']);
+    setup.addRow(['Category', 'Type', 'Report', 'SheetName', 'Type', 'ShortName', 'FlipPolarity', 'EndBalance']);
+    setup.addRow(['Office Supplies', 'Expense', 'P&L', 'Bank', 'Bank', 'Bank', 'No', 0]);
 
     // Ledger Sheet
     const ledger = workbook.addWorksheet('General Ledger');
