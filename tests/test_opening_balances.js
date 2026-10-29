@@ -164,6 +164,7 @@ async function buildWorkbook(file) {
     ]);
     const categories = [
         ['Sales', '', 'Income', 'P&L'],
+        ['Depreciation', '', 'Expense', 'P&L'],
         ['Bank', '', 'Asset', 'Balance Sheet'],
         ['Mortgage', '', 'Liability', 'Balance Sheet'],
         ['Equipment', '', 'Asset', 'Balance Sheet'],
@@ -179,7 +180,11 @@ async function buildWorkbook(file) {
     // An out-of-year row must not matter.
     bank.addRow([new Date('2025-03-02'), 'Last year', -77, 'Equipment']);
 
-    wb.addWorksheet('Ledger').addRow(['Date', 'Description', 'Category', 'Debit', 'Credit']);
+    // Depreciation credits Equipment: a decrease of an unlinked asset that carries an opening balance.
+    const ledger = wb.addWorksheet('Ledger');
+    ledger.addRow(['Date', 'Description', 'Category', 'Debit', 'Credit']);
+    ledger.addRow([new Date('2026-12-31'), 'Depreciation', 'Depreciation', 500, null]);
+    ledger.addRow([new Date('2026-12-31'), 'Depreciation', 'Equipment', null, 500]);
     await wb.xlsx.writeFile(file);
 }
 
@@ -200,7 +205,7 @@ async function testEndToEnd() {
         const tag = form.length === 2 ? 'space form' : '= form';
         check(`End to end (${tag}): exit 0`, r.code === 0, `exit ${r.code}\n${out}`);
         check(`End to end (${tag}): Mortgage = 3433 - 500 = 2933`, valueFor(out, 'Mortgage') === 2933, `got ${valueFor(out, 'Mortgage')}`);
-        check(`End to end (${tag}): Equipment = 4345 + 400 = 4745`, valueFor(out, 'Equipment') === 4745, `got ${valueFor(out, 'Equipment')}`);
+        check(`End to end (${tag}): Equipment = 4345 + 400 - 500 depreciation = 4245`, valueFor(out, 'Equipment') === 4245, `got ${valueFor(out, 'Equipment')}`);
         check(`End to end (${tag}): Bank = 1000 - 500 - 400 = 100`, valueFor(out, 'Bank') === 100, `got ${valueFor(out, 'Bank')}`);
         check(`End to end (${tag}): Owner Investment = 343`, valueFor(out, 'Owner Investment') === 343, `got ${valueFor(out, 'Owner Investment')}`);
         check(`End to end (${tag}): plug = 1000 + 4345 - 3433 - 343 = 1569`,
