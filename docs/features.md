@@ -30,6 +30,7 @@ Every feature listed here should have a test. Gaps are marked ⚠️ and tracked
 | `--save` | Writes `report_<name>.xlsx` (one sheet per report, 1099 Data, Processing Log, Report Info) and a PDF next to the workbook. Does not modify the workbook. | `test_arguments_coverage.js`, `test_comprehensive_report.js` |
 | `--all` | All reports. | `test_vendor_file.js` |
 | `--vendor-file <path>` | Use a specific `vendor.xlsx` / `vendor.csv` for 1099 details. Without it, `vendor.xlsx` / `vendor.csv` next to the workbook (or in the current directory) is used. | `test_vendor_file.js` |
+| `--opening-balances <path>` | Start the year from last year's closing balance-sheet balances in a TOML file (`year`, optional `as_of_date`, `[accounts]` keyed by Setup category). Strictly validated; any problem stops the run with exit 1. See `examples/opening-balances.example.toml`. | `test_opening_balances.js` |
 | `--ignore-vendors` | Don't load `vendor.xlsx` / `vendor.csv`. | `test_vendor_file.js` |
 | `--debug` | Verbose output. | `test_vendor_file.js` |
 | `--help` | Usage. | `test_arguments_coverage.js` |
@@ -43,5 +44,6 @@ Every feature listed here should have a test. Gaps are marked ⚠️ and tracked
 - **Ledger:** debits increase assets and expenses; credits increase income, liabilities and equity. Debits must equal credits and every row needs a date, or the run stops. (`test_ledger_strictness.js`, `test_ledger_unbalanced.js`)
 - **Category validation:** P&L categories must be `Income` or `Expense`; balance-sheet categories must be `Asset`, `Liability` or `Equity`. Violations print `CRITICAL CONFIG ERROR`.
 - **Asset polarity:** linked assets (bank sheets) use natural polarity. Unlinked assets (purchases) are inverted: spending increases the asset. (`test_asset_polarity.js`)
+- **Opening balances:** with `--opening-balances`, an account linked to a sheet gets the file's amount as its sheet's starting balance; an unlinked account has it added after the asset polarity flip. Assets add to, and liabilities and equity subtract from, "Retained Earnings (Opening Balance)" so A = L + E holds. Positive = the account's normal balance. (`test_opening_balances.js`)
 - **Detailed reports:** the Additions and Subtractions columns add magnitudes (`Math.abs`) so mixed signs don't cancel out.
 - **1099 thresholds:** NEC/MISC use the year's threshold; INT uses $0 (all interest is listed). (`test_accounting_lib.js`, `test_1099_boundaries.js`)

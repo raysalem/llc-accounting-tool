@@ -129,6 +129,15 @@ Reports cover one calendar year. Rows dated in other years (transactions and led
 - `--year=YYYY` picks the year. Without it, the tool uses `DEFAULT_TAX_YEAR` in `lib/accounting.js` (currently **2026**). Update that constant once a year.
 - The year also sets the 1099-NEC/MISC threshold: **$600** for payments before 2026, **$2,000** from 2026.
 
+### Opening Balances (starting a new year)
+To start a year from last year's closing balances without retyping them into the workbook, write a small TOML file with the balance-sheet accounts that carry over (see `examples/opening-balances.example.toml`) and pass it to `report.js`:
+```bash
+node report.js My_Books.xlsx --bs --year=2026 --opening-balances opening-balances.toml
+```
+- `year` is the year that closed and must equal `--year` minus 1. Keys under `[accounts]` are Setup category names (case-insensitive; spaces, `_` and `-` are interchangeable).
+- Accounts linked to a sheet become that sheet's starting balance; others are added to the account's balance. The difference goes to "Retained Earnings (Opening Balance)" so A = L + E still holds.
+- A bad file (invalid TOML, duplicate or unknown keys, text instead of a number, an unknown or P&L category, a conflicting StartBalance) stops the run with exit code 1 and lists every problem.
+
 ### Exit Codes
 `report.js` exits with code **1** when the books have critical errors (for example an unbalanced balance sheet or ledger, or incomplete 1099 vendor details) or data-integrity issues (uncategorized rows, unknown categories, vendors or customers). Otherwise it exits 0, so scripts and CI can detect problems.
 
@@ -170,6 +179,7 @@ Supporting code:
 |---|---|
 | `lib/accounting.js` | Amount and date parsing, the default tax year, 1099 thresholds |
 | `lib/cli.js` | `report.js` command-line options and help |
+| `lib/opening-balances.js` | Reads, validates and applies the `--opening-balances` TOML file |
 | `lib/logger.js` | Captures console output for the saved report's Processing Log |
 | `lib/util.js` | Resolves Windows `.lnk` / `.url` shortcuts |
 | `lib/loader/` | `load_transactions.js` steps: target sheet, reading the source file, writing rows, import history |

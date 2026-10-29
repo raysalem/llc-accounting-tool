@@ -19,6 +19,7 @@ All sample books balance, so tests expect `report.js` to exit 0 unless they are 
 | Transfers | CC payment counted once; refunds; transfer category on the wrong sheet | `test_transfers.js` |
 | Ledger | Missing date stops the run; unbalanced ledger stops the run | `test_ledger_strictness.js`, `test_ledger_unbalanced.js` |
 | Balance sheet | Asset polarity for ledger entries | `test_asset_polarity.js` |
+| Opening balances | TOML file validation, Setup-stage checks, and exact balance-sheet numbers with `--opening-balances` | `test_opening_balances.js` |
 | 1099 | Required flag at / under the threshold, after refunds, 2025 vs 2026 | `test_1099_boundaries.js`, `test_1099_threshold.js` |
 | 1099 | Missing vendor TIN/address flagged; `1099 Data` sheet amount | `run_integration_test.js`, `test_comprehensive_report.js` |
 | Checker | Unknown category, uncategorized rows, non-zero exit | `run_integration_test.js`, `test_comprehensive_report.js` |
@@ -73,6 +74,20 @@ All sample books balance, so tests expect `report.js` to exit 0 unless they are 
 - **Office Supplies**: −250.00, because the refund reduces the expense.
 - **Net income**: 750.00, and the balance sheet balances (900 = 150 + 750).
 - **Wrong sheet**: using `Transfer AX CC` on the Bank sheet prints `CRITICAL WARNING … expects Transfer Account "AX CC" … Sheet "Bank"`.
+
+## Opening Balances (`test_opening_balances.js`)
+
+**Setup**: `Bank` (asset, linked to the Bank sheet, no StartBalance), `Mortgage` (unlinked liability), `Equipment` (unlinked asset), `Owner Investment` (equity). Bank sheet, 2026: −500 to `Mortgage`, −400 to `Equipment` (plus a 2025 row that is skipped). File (closing year 2025): Bank 1,000, Mortgage 3,433, Equipment 4,345, Owner Investment 343. Run with `--bs --year=2026`.
+
+| Check | Math | Expected |
+|---|---|---|
+| Bank | 1,000 − 500 − 400 | 100.00 |
+| Mortgage | 3,433 − 500 | 2,933.00 |
+| Equipment | 4,345 + 400 | 4,745.00 |
+| Retained Earnings (Opening Balance) | 1,000 + 4,345 − 3,433 − 343 | 1,569.00 |
+| Balance sheet | 4,845 = 2,933 + 1,912 | `[OK] (A = L + E)` |
+
+The test also covers each validation rule (duplicate key, `[acounts]` typo, missing or 3-digit year, bad `as_of_date`, empty `[accounts]`, string or 3-decimal value, nested table), the Setup-stage checks (unknown or P&L category, two keys for one category, wrong year, conflicting or equal StartBalance) and that a bad file exits 1 with every problem listed.
 
 ## Known Gaps
 

@@ -157,3 +157,26 @@ Not all positive numbers on your Credit Card statement are Payments!
     *   *Why?* This is "free money" reducing your debt. It *should* be counted.
 
 **Summary:** Only exclude **Transfers** (money moving between your own accounts). Do not exclude Refunds or Rewards.
+
+---
+
+## Part 6: Starting a New Year (Opening Balances)
+*Goal: Carry last year's closing balance-sheet balances into the new year without retyping them.*
+
+Write a TOML file with the balance-sheet accounts that carry over (the mortgage, loans, owner investment, equipment). The P&L is not carried over; it starts at zero each year. Keys are category names from your `Setup` tab:
+
+```toml
+year = 2025                 # the year that closed; must equal --year minus 1
+as_of_date = 2025-12-31     # optional: 2025-12-31 or 2026-01-01
+
+[accounts]
+"Mortgage" = 3433.00
+"Solar Loan" = 4345
+"Owner1 Investment" = 343
+```
+
+Then run `node report.js My_Books.xlsx --bs --year=2026 --opening-balances opening-balances.toml`. A positive number is the account's normal balance (asset owned, liability owed, equity contributed). The tool does not read tax returns; copy the closing figures from last year's balance sheet.
+
+*   An account linked to a bank or card sheet must not also have a different StartBalance in `Setup`. Use one or the other.
+*   The difference between assets and liabilities plus equity appears as "Retained Earnings (Opening Balance)".
+*   A mistake anywhere in the file (unknown category, text instead of a number, more than 2 decimals) stops the run and lists every problem.
