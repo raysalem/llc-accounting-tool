@@ -1,0 +1,12 @@
+# Closing balances of last year, used with: node report.js books.xlsx --bs --year=2026 --opening-balances examples/opening-balances.example.toml
+# Only balance-sheet accounts carry over. Keys are category names from the Setup sheet.
+# Positive = the account's normal balance (asset owned, liability owed, equity contributed).
+
+year = 2025               # the year that closed; must be --year minus 1
+as_of_date = 2025-12-31   # optional: 2025-12-31 or 2026-01-01
+
+[accounts]
+"Checking" = 10000.00
+"Mortgage" = 250000.00
+"Solar Loan" = 20000
+"Owner Investment" = 5000.00

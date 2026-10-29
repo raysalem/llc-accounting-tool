@@ -10,6 +10,7 @@ const path = require('path');
 const { originalConsole, captureConsole } = require('./lib/logger');
 const { parseArgs } = require('./lib/cli');
 const { resolveShortcut } = require('./lib/util');
+const { loadOpeningBalancesFile, resolveOpeningBalances } = require('./lib/opening-balances');
 const { createContext } = require('./lib/report/context');
 const { readSetup } = require('./lib/report/setup');
 const { readSheetConfigs } = require('./lib/report/sheet-config');
@@ -26,6 +27,9 @@ async function updateFinancials() {
     const opts = parseArgs(process.argv.slice(2));
     if (opts.help) return;
     const { showDebug, taxYear, THRESHOLD_1099_NEC } = opts;
+
+    // Read and check the opening balances file first, so a bad file fails before the workbook is opened.
+    const openingBalances = opts.openingBalancesPath ? loadOpeningBalancesFile(opts.openingBalancesPath) : null;
 
     let filename = opts.filename;
     const originalInputPath = filename; // Store original input for path resolution
@@ -85,6 +89,11 @@ async function updateFinancials() {
 
     await readSetup(ctx);
     await readSheetConfigs(ctx);
+    if (openingBalances) {
+        const { count, plug } = resolveOpeningBalances(openingBalances, ctx);
+        const fmt = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        console.log(`Opening balances: ${count} account${count === 1 ? '' : 's'} from ${path.basename(opts.openingBalancesPath)} (closing year ${openingBalances.year}). Plug to Retained Earnings (Opening Balance): ${fmt(plug)}`);
+    }
     await loadExternalVendors(ctx);
     await processTransactionSheets(ctx);
     await processLedger(ctx);
