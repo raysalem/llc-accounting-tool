@@ -1,0 +1,110 @@
+# Example book file: all the configuration for one LLC (fake data).
+# Copy this file and example.private.toml next to your workbook, rename them
+# (e.g. acme.book.toml), then edit. See docs/setup.md ("Book file").
+#
+# Try it:
+#   node generate_excel.js --book examples/example.book.toml    (creates the workbook named below)
+#   node report.js --book examples/example.book.toml
+#
+# Unknown keys, wrong types, missing sheets and bad links are errors; each message says how to fix it.
+
+[book]
+id = "example"                      # short name; the key in books.toml
+name = "Example Holdings LLC"
+workbook = "Example_2026.xlsx"      # relative to this file's folder
+year = 2026                         # default for --year (the command line wins)
+default_flags = ["--pl", "--bs"]    # report flags used on every run, in addition to yours
+blank_sheets = ["Worksheet"]        # optional: empty tabs for your own use; the report ignores them
+private = "example.private.toml"    # tax IDs; only read for --1099
+# opening_balances = "example-2025-closing.toml"   # last year's closing balances (see opening-balances.example.toml)
+
+[company]                           # the payer, printed on 1099 output (its tax ID is in the private file)
+name = "Example Holdings LLC"
+address = "1 Main St"
+city = "Springfield"
+state = "CA"
+zip = "90000"
+country = "US"
+email = "books@example.com"
+phone = "555-0100"
+
+# Sheets. type: bank | cc | income | expense | ledger.
+# link = the Balance Sheet category the sheet reconciles to. end_balance = the statement's ending balance
+# for the year (required; 0 is valid). flip defaults to false for bank/income and true for cc/expense.
+[[sheets]]
+name = "Chase Checking"
+type = "bank"
+link = "Checking"
+short_name = "Chase"
+start_balance = 0
+end_balance = 0
+
+[[sheets]]
+name = "Visa Card"
+type = "cc"
+link = "Credit Card"
+short_name = "Visa"
+start_balance = 0
+end_balance = 0
+
+[[sheets]]
+name = "Ledger"                     # manual double-entry rows; no link or balances
+type = "ledger"
+header_row = 3
+
+# Categories. type: asset | liability | equity | income | expense | transfer.
+# Income and expense are the Profit & Loss; asset, liability and equity are the Balance Sheet.
+[[categories]]
+name = "Sales"
+type = "income"
+description = "optional note for you on any sheet, category, vendor or customer; the tool ignores it"
+subcategories = ["Consulting", "Products"]
+
+[[categories]]
+name = "Office Supplies"
+type = "expense"
+subcategories = ["Software", "Paper"]
+
+[[categories]]
+name = "Contract Labor"
+type = "expense"
+
+[[categories]]
+name = "Checking"
+type = "asset"
+
+[[categories]]
+name = "Equipment"                  # an asset without a sheet: purchases add to it
+type = "asset"
+
+[[categories]]
+name = "Credit Card"
+type = "liability"
+
+[[categories]]
+name = "Owner Investment"
+type = "equity"
+
+[[categories]]
+name = "Transfer Credit Card"       # a card payment seen on both the bank and card sheets: counted once
+type = "transfer"
+transfer_account = "Credit Card"
+
+# Vendors: the exact text used in the Vendor column. form_1099: NEC | INT | MISC | none.
+[[vendors]]
+name = "Acme Plumbing"
+business_name = "Acme Plumbing Inc"
+form_1099 = "NEC"
+address = "2 Pipe Rd"
+city = "Springfield"
+state = "CA"
+zip = "90001"
+email = "acme@example.com"
+phone = "555-0101"
+
+[[vendors]]
+name = "Office Depot"
+
+# Customers: the exact text used in the Customer column.
+[[customers]]
+name = "Client A"

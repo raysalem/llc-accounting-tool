@@ -1,11 +1,15 @@
 const ExcelJS = require('exceljs');
 const { execSync } = require('child_process');
+const fs = require('fs');
 const pkg = require('./package.json');
+const { parseOptionValue, stripOption } = require('./lib/cli');
+const book = require('./lib/book');
 
 // Help Support
 if (process.argv.includes('--help')) {
     console.log(`
 Usage: node generate_excel.js [outputFilename]
+       node generate_excel.js --book <id|path> [outputFilename]
 
 Description:
   Generates the core LLC Accounting Template Excel file.
@@ -14,14 +18,48 @@ Description:
 Arguments:
   [outputFilename]   (Optional) Name of the file to generate. Defaults to "LLC_Accounting_Template.xlsx".
 
+  --book <id|path>   Make a starting workbook for a book file instead (see docs/setup.md): one sheet per
+                     [[sheets]] entry, a Ledger and a generated Lists sheet, and NO Setup sheet. Written to the
+                     book's "workbook" path unless a file name is given. Refuses to overwrite an existing file.
+
 Example:
   node generate_excel.js "My_Consulting_Books_2025.xlsx"
+  node generate_excel.js --book examples/example.book.toml
     `);
     process.exit(0);
 }
 
+// --book: a workbook with the book's sheets and Lists, and no Setup sheet.
+async function createBookWorkbook(args) {
+    const ref = parseOptionValue(args, '--book');
+    if (!ref) throw new Error('--book needs a book id or the path of a book file (.toml).');
+    const config = book.loadBook(ref);
+    const filename = stripOption(args, '--book').find(a => !a.startsWith('--')) || config.workbookPath;
+    if (fs.existsSync(filename)) throw new Error(`"${filename}" already exists; not overwriting it. Fix: give another file name, or delete it first.`);
+    let gitSha = 'N/A';
+    try {
+        gitSha = execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch (e) {
+        // Not a git checkout; keep 'N/A'
+    }
+    const workbook = await book.buildBookWorkbook(ExcelJS, config, [
+        ['Version ID', pkg.version], ['Git SHA', gitSha], ['Generated At', new Date().toLocaleString()], ['Book', config.id],
+    ]);
+    await workbook.xlsx.writeFile(filename);
+    console.log(`Workbook created for book "${config.id}": ${filename}`);
+}
+
 async function createTemplate() {
     const args = process.argv.slice(2);
+    if (args.some(a => a === '--book' || a.startsWith('--book='))) {
+        try {
+            await createBookWorkbook(args);
+        } catch (e) {
+            console.error(`Error: ${e.message}`);
+            process.exitCode = 1;
+        }
+        return;
+    }
     const filename = args.find(a => !a.startsWith('--')) || 'LLC_Accounting_Template.xlsx';
     const workbook = new ExcelJS.Workbook();
 

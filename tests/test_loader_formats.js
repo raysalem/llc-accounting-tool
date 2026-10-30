@@ -70,10 +70,10 @@ async function main() {
         // Each tax year sees only its own two rows, so each year has its own statement ending balance.
         await setBankEndBalance(book, 1234.56 - 50); // 2025: deposit and fee
         const r25 = spawnSync(process.execPath, ['report.js', book, '--year=2025', '--pl'], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, TZ: tz } });
-        check(`[${tz}] 2025 report skips the two 2026 rows`, r25.stdout.includes('Skipped 2 transaction row(s) dated outside 2025'));
+        check(`[${tz}] 2025 report skips the two 2026 rows`, r25.stdout.includes('Tax year check: 2 of 4 rows are NOT dated 2025'));
         await setBankEndBalance(book, -1000 + 25); // 2026: charge and deposit
         const r26 = spawnSync(process.execPath, ['report.js', book, '--year=2026', '--pl'], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, TZ: tz } });
-        check(`[${tz}] 2026 report skips the two 2025 rows`, r26.stdout.includes('Skipped 2 transaction row(s) dated outside 2026'));
+        check(`[${tz}] 2026 report skips the two 2025 rows`, r26.stdout.includes('Tax year check: 2 of 4 rows are NOT dated 2026'));
     }
 
     fs.rmSync(TMP, { recursive: true, force: true });

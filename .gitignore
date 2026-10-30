@@ -17,3 +17,8 @@ tests/debug_*.txt
 *.pdf
 *.xls
 *.lnk
+
+# Book configuration: the registry and every private (tax ID) file stay out of git
+books.toml
+*.private.toml
+!examples/example.private.toml

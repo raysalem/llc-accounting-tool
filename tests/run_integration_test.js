@@ -123,7 +123,7 @@ async function runTest() {
     console.log('\n--- Phase 7: Tax year filter ---');
     const otherYear = runReport('--pl --year=2026');
     assertIncludes(otherYear.output, 'Tax year: 2026 (1099-NEC threshold: $2,000)', '2026 uses the $2,000 NEC threshold');
-    assertIncludes(otherYear.output, 'Skipped 11 transaction row(s) dated outside 2026', '2025 rows (7 transactions + 4 ledger) skipped when reporting 2026');
+    assertIncludes(otherYear.output, 'Tax year check: 11 of 11 rows are NOT dated 2026', '2025 rows (7 transactions + 4 ledger) skipped when reporting 2026');
     assertIncludes(otherYear.output, 'NET INCOME: 0.00', 'No 2025 income in a 2026 report');
 
     console.log('\n--- Phase 8: Integrity checker flags bad rows ---');

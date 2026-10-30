@@ -2,6 +2,13 @@
 
 Notes from an outside review of the repo (September 2026), updated after the first round of fixes.
 
+## Book file (`--book`) follow-ups
+
+- [ ] **Setup -> book migration tool.** A one-time command that reads a workbook's Setup sheet and writes `<book>.book.toml` and `<book>.private.toml` (tax IDs split out), so existing LLCs can move without retyping. Out of scope of the first `--book` release.
+- [ ] **Remove the Setup-sheet path** (`lib/report/setup.js`, `sheet-config.js`, the Setup branch of `load_transactions.js`, the Setup tab in `generate_excel.js`, the `header-map.js` use for the Setup sheet) once every LLC has moved to a book. Then update `.cursorrules` ("Single Source of Truth") and the legacy section of `docs/setup.md`.
+- [ ] `excel-report.js` finds the workbook name for the Report Info sheet with `rawArgs.find(a => !a.startsWith('--'))`, which returns the book id (the value of `--book`) instead of the workbook. Pass the workbook path from the stamp instead.
+- [ ] Dropdown ranges on the Lists sheet are fixed at 2,000 rows (`lib/book/lists.js`); raise it if a list ever gets longer (the writer refuses with a message).
+
 ## Decisions needed (from you)
 
 Each item changes behavior, so it waits for your call. The recommendation comes first.
@@ -80,7 +87,7 @@ Gaps, in priority order:
 
 - [ ] **End Balance for the default sheets.** When Setup has no sheet configuration, the default Bank/Credit Card sheets are used and are exempt from the required End Balance (there is no Setup row to put it in). Decide whether a book with no sheet configuration should fail instead.
 - [ ] **Dead code in `diagnostics.js`.** The `--- WALLET RECONCILIATION ---` block reads `ctx.walletCheckResults`, which nothing fills; the live table is printed by `wallets.js` under `--checker`.
-- [ ] **Keep the hard stops.** Never loosen the checks that refuse to produce a report when the ledger is unbalanced, a ledger row has no date, or an account's calculated end balance doesn't match its End Balance.
+- [ ] **Keep the hard stops.** Never loosen the check that refuses to produce a report when a ledger row has no date. An unbalanced ledger and End Balance problems are errors (exit 1) but the reports still print; `--checker` stops on an unbalanced ledger (Ray, 2026-10-30).
 
 ## Repo hygiene
 

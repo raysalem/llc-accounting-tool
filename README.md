@@ -82,7 +82,7 @@ The tool validates every transaction during the report generation process:
 
 ## Documentation
 
-- [`docs/setup.md`](docs/setup.md): how to fill in the Setup sheet
+- [`docs/setup.md`](docs/setup.md): the book file (`--book`) and, as the legacy path, the Setup sheet
 - [`docs/accounting-rules.md`](docs/accounting-rules.md): tax-season checklist, 1099 prep, ledger entries, credit-card transfers
 - [`docs/features.md`](docs/features.md): every command and flag, with test coverage
 - [`docs/development.md`](docs/development.md): architecture, dependencies and coding standards
@@ -123,6 +123,17 @@ The tool validates every transaction during the report generation process:
    ```bash
    node report.js My_Books.xlsx --pl --bs --year=2025
    ```
+
+### Book file (`--book`): one config file per LLC
+Instead of the Setup sheet, keep an LLC's configuration (company, sheets, categories, vendors, customers, default flags and year) in one TOML file, and tax IDs in a separate private file:
+```bash
+cp examples/example.book.toml acme.book.toml           # edit; also copy example.private.toml to acme.private.toml
+node generate_excel.js --book acme.book.toml           # makes the workbook named in the book (no Setup sheet)
+node load_transactions.js --book acme.book.toml "chase_jan.csv" "Chase Checking"
+node report.js --book acme.book.toml                   # default_flags and year come from the book
+node report.js --book acme.book.toml --1099 --save     # tax IDs come from the private file, never printed
+```
+`--book` takes a path or an id from `books.toml` (or the file named by the `LLC_BOOKS` environment variable). Every problem in a book is listed at once with a suggested fix. `load_transactions.js --book` first checks that Excel does not have the workbook open, and rewrites a generated `Lists` sheet that the dropdowns use (`--refresh-lists` rewrites just that). Full schema in [`docs/setup.md`](docs/setup.md). Without `--book` everything works as before from the Setup sheet.
 
 ### Tax Year
 Reports cover one calendar year. Rows dated in other years (transactions and ledger entries) are skipped, and the report says how many were skipped.
@@ -183,11 +194,12 @@ Supporting code:
 | `lib/accounting.js` | Amount and date parsing, the default tax year, 1099 thresholds |
 | `lib/cli.js` | `report.js` command-line options and help |
 | `lib/opening-balances.js` | Reads, validates and applies the `--opening-balances` TOML file |
+| `lib/book/` | `--book`: finds, validates and applies a book file and its private (tax ID) file; the generated Lists sheet; the Excel lock check |
 | `lib/logger.js` | Captures console output for the saved report's Processing Log |
 | `lib/util.js` | Resolves Windows `.lnk` / `.url` shortcuts |
 | `lib/loader/` | `load_transactions.js` steps: target sheet, reading the source file, writing rows, import history |
 | `lib/report/context.js` | Shared state passed between the report phases |
-| `lib/report/setup.js`, `sheet-config.js`, `external-vendors.js` | Read the Setup sheet and optional `vendor.xlsx` / `vendor.csv` |
+| `lib/report/setup.js`, `sheet-config.js`, `external-vendors.js` | Read the Setup sheet (without `--book`) and optional `vendor.xlsx` / `vendor.csv`; `header-map.js` and `name-overlaps.js` are shared with the book path |
 | `lib/report/transactions.js`, `sheet-columns.js`, `columns.js`, `linkage.js` | Process transaction sheets and apply each sheet's total to its linked account |
 | `lib/report/ledger.js`, `wallets.js` | Process the Ledger sheet; check ending balances (End Balance required) |
 | `lib/report/stamp.js` | The report stamp (version, git commit, run time, flags, input file hashes) shown on the console, Report Info sheet and PDF |
@@ -198,7 +210,7 @@ Supporting code:
 | `tests/` | Test suite (`npm test`); see `docs/testing.md` |
 | `docs/` | Setup sheet reference, features, accounting rules, development guide, test plan |
 
-`report.js` runs the phases in order: setup → sheet config → external vendors → transactions → ledger → wallet check → build reports → print → diagnostics → save.
+`report.js` runs the phases in order: book (with `--book`) → setup → sheet config → external vendors → transactions → ledger → wallet check → build reports → print → diagnostics → save.
 
 ## License
 

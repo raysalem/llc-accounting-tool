@@ -29,6 +29,11 @@ All sample books balance and every Bank/CC sheet carries the correct End Balance
 | CLI | `--vendor-file`, `vendor.csv` next to the workbook, `--ignore-vendors`, `--all`, `--debug` | `test_vendor_file.js` |
 | Reconciliation | End Balance required for Bank/CC sheets: all match, one missing, explicit 0, mismatch, mixed counts in the summary line | `test_reconciliation.js` |
 | Report stamp | Version, git commit, run time, flags, tax year and workbook SHA-256/size on the console and in the `--save` Report Info sheet | `test_reconciliation.js` |
+| Book file | Validation (every problem listed with a fix), registry and path lookup, default_flags / --year / workbook merge, the example files with `generate_excel.js --book` | `test_book_config.js` |
+| Book file | Same reports as the Setup sheet (`--all`, `--1099`), tax IDs never on the console and present in the saved `1099 Data` sheet, private file handling, `--opening-balances` override | `test_book_equivalence.js` |
+| Book file | `load_transactions.js --book`: lock check first, Lists sheet, dropdowns (Sub-Category by Category) point at Lists, a second import lands right under the first, `--refresh-lists`, legacy import unchanged | `test_book_loader.js` |
+| Tax year check | A book row dated in another year is listed and fails the run (exit 1); reports still print; all-in-year summary | `test_tax_year_check.js` |
+| Unbalanced ledger | Reports still print with the error, exit 1; `--checker` stops before the reports | `test_ledger_unbalanced.js` |
 | Setup | No sheet configuration in Setup: default sheets are used and their header row is found | `test_fallback_sheets.js` |
 
 ## Integration Test (`run_integration_test.js`)
@@ -90,6 +95,24 @@ All sample books balance and every Bank/CC sheet carries the correct End Balance
 | Balance sheet | 4,845 = 2,933 + 1,912 | `[OK] (A = L + E)` |
 
 The test also covers each validation rule (duplicate key, `[acounts]` typo, missing or 3-digit year, bad `as_of_date`, empty `[accounts]`, string or 3-decimal value, nested table), the Setup-stage checks (unknown or P&L category, two keys for one category, wrong year, conflicting or equal StartBalance) and that a bad file exits 1 with every problem listed.
+
+## Book Equivalence (`test_book_equivalence.js`)
+
+**Setup**: one synthetic book (year 2026) built twice: as a workbook with Setup tables (header-row detection) and as a TOML book (`default_flags = ["--all"]`, `opening_balances`) with a workbook that has no Setup sheet, and again with a stale Setup sheet that must be ignored. It has income, expense, asset, liability, equity and transfer categories with sub-categories, a bank sheet linked to Checking, a card sheet (flipped) linked to Credit Card, a Ledger, an unlinked asset (Equipment), a 1099-NEC vendor, a customer, and opening balances. The run compares `--all` (and `--1099`) stdout and stderr, exit code included, after removing the stamp lines, the "Setup sheet ignored" line, the Setup-table warning, the payer-source line and the book-mode 1099 hint.
+
+| Check | Math | Expected |
+|---|---|---|
+| Checking | 1,000 opening + (5,000 − 2,500 − 300 − 100 − 400) + 500 ledger | 3,200.00 |
+| Credit Card | 200 + 150 charge − 100 bank autopay (the card-side Transfer payment is left out) | 250.00 |
+| Equipment (unlinked asset) | 600 + 400 | 1,000.00 |
+| Owner Investment | 1,000 + 500 | 1,500.00 |
+| Net income | 5,000 − 2,500 − (300 + 150) | 2,050.00 |
+| Retained Earnings (Opening Balance) | 1,000 + 600 − 200 − 1,000 | 400.00 |
+| Balance sheet | 4,200 = 250 + 3,950 | `[OK] (A = L + E)` |
+
+**Tax IDs** (fake: `00-0000000`, `00-0000001`): with a private file and complete vendor details, `--1099`, `--all`, `--debug --checker`, `--details` and `--save` runs never print either ID to stdout or stderr; `--save` writes both in `1099 Data` and in no other sheet. Without the private file the run reports "Missing: Tax ID (SSN/EIN)" and exits 1.
+
+**Lock test** (`test_book_loader.js`): on Windows a PowerShell helper opens the workbook with sharing denied (what Excel does) and the test checks exit 1, the message, that the missing export was never looked at, and that the file is byte-identical. Elsewhere only the mocked-`fs` unit test of `lib/book/lock.js` runs (EBUSY, EPERM, EACCES, ENOENT, other errors).
 
 ## Known Gaps
 

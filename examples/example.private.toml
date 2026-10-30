@@ -1,0 +1,9 @@
+# Example private file: tax IDs only (fake values). Keep the real one out of git and
+# out of anything an AI agent reads. Only report.js --1099 reads it, and it never prints a tax ID.
+# Vendor names must match [[vendors]] names in the book file.
+
+[company]
+tin = "00-0000000"
+
+[vendors."Acme Plumbing"]
+tin = "00-0000001"

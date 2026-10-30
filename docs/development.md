@@ -13,7 +13,7 @@ Run `npm install` once. It installs the dependencies and turns on the pre-commit
 |---|---|
 | `exceljs` | Reading and writing `.xlsx` workbooks. The only Excel library; don't add others. |
 | `pdfkit` | The PDF copy of `--save` output. Optional at runtime: if it fails to load, no PDF is written. |
-| `smol-toml` | Parsing the `--opening-balances` file (`lib/opening-balances.js`). A strict TOML parser: it rejects duplicate keys, which a hand-written parser would let through. |
+| `smol-toml` | Parsing the `--opening-balances` file (`lib/opening-balances.js`) and the `--book` files (`lib/book/`). A strict TOML parser: it rejects duplicate keys, which a hand-written parser would let through. |
 | `glob` | File matching in `scripts/batch_run.js`. |
 | `eslint`, `@eslint/js`, `globals` (dev) | Linting (`npm run lint`). |
 
@@ -24,7 +24,8 @@ The Excel workbook is the database and the user interface. There is no server or
 1. **Generate:** `generate_excel.js` creates a workbook with the Setup, transaction, Ledger, Summary and VERSION sheets.
 2. **Import:** `load_transactions.js` maps a bank or card export's columns onto a transaction sheet (`lib/loader/`).
 3. **Report:** `report.js` runs these phases in order, each in `lib/report/`, sharing state through the context object in `lib/report/context.js`:
-   1. `setup.js`, `sheet-config.js`, `external-vendors.js`: read categories, vendors, customers, payer info and sheet configuration. With `--opening-balances`, `report.js` parses the file before opening the workbook, and `lib/opening-balances.js` checks it against Setup right after `sheet-config.js` (linked accounts get a `startBalance`; the rest go on `ctx.openingBalances`).
+   0. `lib/book/` (only with `--book`): `resolve.js` finds the book (id in `books.toml` / `LLC_BOOKS`, or a path), `parse.js` validates it and the private file (every problem collected, with `suggest.js` closest-match fixes), `index.js` merges `default_flags`, the book's `year` and its workbook into the arguments. `report.js` does this before opening the workbook. After the workbook is open, `parse.js` checks the sheet names and `apply.js` fills the context with the same structures `setup.js` and `sheet-config.js` fill, so every later phase is unchanged: category type `income`/`expense` -> report `P&L`; `asset`/`liability`/`equity` -> `Balance Sheet` (accountType `Asset`/`Liability`/`Equity`); `transfer` -> report `Transfer`; a sheet's `type` is the lower-case Setup Sheet Type (`bank`, `cc`, `income`, `expense`, `ledger`); `flip` defaults from the type as in `sheet-config.js`; `link` becomes `linkedAccount`. Tax IDs are applied after `external-vendors.js` (`applyPrivate`) and `print-1099.js` never prints them when `ctx.book` is set. `lists.js`, `lock.js` and `workbook.js` serve `load_transactions.js --book` and `generate_excel.js --book`.
+   1. `setup.js`, `sheet-config.js`, `external-vendors.js`: read categories, vendors, customers, payer info and sheet configuration (the first two only without `--book`; `header-map.js` and `name-overlaps.js` are shared with the book path). With `--opening-balances`, `report.js` parses the file before opening the workbook, and `lib/opening-balances.js` checks it against Setup right after `sheet-config.js` (linked accounts get a `startBalance`; the rest go on `ctx.openingBalances`).
    2. `transactions.js` (with `sheet-columns.js`, `columns.js`, `linkage.js`): process each transaction sheet, apply polarity and the tax-year filter, total by category/vendor/customer, record integrity issues, and apply the sheet's net change to its linked account.
    3. `ledger.js`: apply manual double-entry rows; stop if unbalanced or undated.
    4. `wallets.js`: compare each account's calculated ending balance with the End Balance in Setup. A Bank/CC (or linked) sheet without an End Balance is an error; `diagnostics.js` prints the one-line reconciliation summary.
@@ -47,4 +48,5 @@ Shared helpers: `lib/accounting.js` (amounts, dates, tax year, 1099 thresholds),
 - **Setup parsing:** changes must keep working with both formal Excel tables and header-row detection.
 - **Asset polarity:** assets behave inversely to expenses relative to bank polarity (spending increases a purchased asset). New features must respect this.
 - **Tests write to a temp directory**, never into the repo. See `docs/testing.md`.
+- **Never print a tax ID.** With `--book` tax IDs live in the private file; console output, error messages and the Processing Log must not contain one (`test_book_equivalence.js` asserts it). Messages about the private file name keys, never values, and a smol-toml error is cut to its first line (the rest quotes the source line).
 - **Keep the docs in sync:** a new flag or behavior change updates `docs/features.md` (and `docs/setup.md` if the Setup sheet changes).
