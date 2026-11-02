@@ -83,6 +83,7 @@ The tool validates every transaction during the report generation process:
 ## Documentation
 
 - [`docs/setup.md`](docs/setup.md): the book file (`--book`) and, as the legacy path, the Setup sheet
+- [`docs/faq.md`](docs/faq.md): FAQ and how-tos, starting with **how to set starting (opening) balances**
 - [`docs/accounting-rules.md`](docs/accounting-rules.md): tax-season checklist, 1099 prep, ledger entries, credit-card transfers
 - [`docs/features.md`](docs/features.md): every command and flag, with test coverage
 - [`docs/development.md`](docs/development.md): architecture, dependencies and coding standards
@@ -135,12 +136,46 @@ node report.js --book acme.book.toml --1099 --save     # tax IDs come from the p
 ```
 `--book` takes a path or an id from `books.toml` (or the file named by the `LLC_BOOKS` environment variable). Every problem in a book is listed at once with a suggested fix. `load_transactions.js --book` first checks that Excel does not have the workbook open, and rewrites a generated `Lists` sheet that the dropdowns use (`--refresh-lists` rewrites just that). Full schema in [`docs/setup.md`](docs/setup.md). Without `--book` everything works as before from the Setup sheet.
 
+### Local site: every LLC in one browser page
+List your LLCs once in `llc-site.toml` (next to them, or anywhere: pass its path):
+```toml
+[site]
+port = 5170
+
+[books]
+val = "2026/val/valencia.book.toml"     # paths relative to this file
+```
+```bash
+node site.js path/to/llc-site.toml       # opens http://localhost:5170/
+```
+The **FAQ** link in the page header shows [docs/faq.md](docs/faq.md) (how-tos such as setting starting balances), read fresh on each visit.
+- **Home:** one card per LLC with net income and its checks (green / red).
+- **LLC tab:** pick the left and right panels (P&L, Balance Sheet, Vendors, Customers, 1099 Review), each Brief or Detailed (one column per account sheet, plus sub-categories).
+- **Before / after:** "Last change" adds Before and Change columns; changed rows are highlighted. Before is the result before the last change that moved a number (kept while the site runs).
+- **Live:** saving the workbook, the book file, the opening-balances file or `llc-site.toml` recomputes on its own. A broken file shows its error with a fix and keeps the last good numbers; other LLCs are unaffected.
+- **Checker:** always on screen; failing checks are listed by sheet and row.
+- **Private:** listens on 127.0.0.1 only and refuses any other host name. Tax IDs never reach the page (only "on file / missing"). It only reads the books.
+- `--book <id>` on the command line reads the same `llc-site.toml` (the older flat `books.toml` still works).
+- `report.js --json <path>` writes the results as data (what the site shows).
+
+### Watch mode: edit, save, see what changed
+Leave one window running next to Excel; every save reruns the report and shows only what changed since the last run:
+```bash
+node watch.js --book acme.book.toml --all        # same arguments as report.js
+```
+- **Redline** (default): removed lines red and struck through, added lines green, a few unchanged lines around each change. Press `v` for **side by side** (BEFORE | AFTER), `f` for the full report.
+- `b` pins the current run as BEFORE, so you can make several edits and compare them all against one starting point; `p` goes back to comparing with the previous run. `r` reruns, `q` quits.
+- `o` opens the same comparison in the browser (a local file in your temp folder that refreshes itself), with Redline / Side by side / Changes only buttons.
+- It watches the workbook, the book file and any opening-balances or vendor file. It is **print-only**: `--save` is refused, and the report only reads the workbook. Excel can stay open.
+- Run time and file-hash lines in the stamp are ignored, so a save with no real change shows "no changes".
+
 ### Tax Year
 Reports cover one calendar year. Rows dated in other years (transactions and ledger entries) are skipped, and the report says how many were skipped.
 - `--year=YYYY` picks the year. Without it, the tool uses `DEFAULT_TAX_YEAR` in `lib/accounting.js` (currently **2026**). Update that constant once a year.
 - The year also sets the 1099-NEC/MISC threshold: **$600** for payments before 2026, **$2,000** from 2026.
 
 ### Opening Balances (starting a new year)
+Step-by-step guide and common errors: [docs/faq.md](docs/faq.md). With a book file, set `opening_balances = "<file>"` under `[book]` instead of passing the flag.
 To start a year from last year's closing balances without retyping them into the workbook, write a small TOML file with the balance-sheet accounts that carry over (see `examples/opening-balances.example.toml`) and pass it to `report.js`:
 ```bash
 node report.js My_Books.xlsx --bs --year=2026 --opening-balances opening-balances.toml
@@ -150,7 +185,7 @@ node report.js My_Books.xlsx --bs --year=2026 --opening-balances opening-balance
 - A bad file (invalid TOML, duplicate or unknown keys, text instead of a number, an unknown or P&L category, a conflicting StartBalance) stops the run with exit code 1 and lists every problem.
 
 ### Report Stamp
-Every run starts by printing what the report is made from: tool version, git commit, run time, the command-line arguments, tax year, and the SHA-256 (first 12 hex digits) and size of each input file (workbook, opening-balances file, vendor file). `--save` repeats it in the **Report Info** sheet and on the PDF title page, so a saved report can be traced to the exact files that produced it. A one-line `Reconciliation: N of N accounts match their End Balance` summary is printed on every run.
+Every run starts by printing what the report is made from: the **Version ID** (`<version>-<commit>-<code hash>`, e.g. `3.0.142-557496f-8c7bbd`; the code hash changes with any change to the tool's code, committed or not), tool version, git commit, run time, the command-line arguments, tax year, and the SHA-256 (first 12 hex digits) and size of each input file (workbook, opening-balances file, vendor file). `--save` repeats it in the **Report Info** sheet and on the PDF title page, puts the Version ID in the footer of every Excel sheet and every PDF page, so a saved report can be traced to the exact files that produced it. A one-line `Reconciliation: N of N accounts match their End Balance` summary is printed on every run.
 
 ### Exit Codes
 `report.js` exits with code **1** when the books have critical errors (for example an unbalanced balance sheet or ledger, a missing or mismatched End Balance, or incomplete 1099 vendor details) or data-integrity issues (uncategorized rows, unknown categories, vendors or customers). Otherwise it exits 0, so scripts and CI can detect problems.
@@ -186,6 +221,8 @@ Entry points (run with `node <script> --help`):
 - `generate_excel.js`: creates the starting Excel workbook.
 - `load_transactions.js`: imports a bank or credit-card export (CSV or Excel) into the workbook.
 - `report.js`: builds and prints the reports; `--save` writes `report_<name>.xlsx` and a PDF.
+- `site.js`: the local site for all LLCs (`llc-site.toml`).
+- `watch.js`: reruns `report.js` on every save and shows the changes (redline or side by side); print-only.
 
 Supporting code:
 
@@ -205,6 +242,9 @@ Supporting code:
 | `lib/report/stamp.js` | The report stamp (version, git commit, run time, flags, input file hashes) shown on the console, Report Info sheet and PDF |
 | `lib/report/build-reports.js` | Build P&L, balance sheet, vendor and customer report rows |
 | `lib/report/print-statements.js`, `print-1099.js`, `format-table.js`, `diagnostics.js` | Console output and final status |
+| `lib/site/` | `site.js`: LLC model and recompute (`books.js`), local server (`server.js`), the page (`public/`) |
+| `lib/report/export-json.js` | `--json`: reports, checks and 1099 review as data (no tax IDs) |
+| `lib/watch/` | `watch.js`: line diff of two report runs, console redline / side by side, browser page |
 | `lib/report/summary.js`, `lib/output/` | `--save`: Excel report and PDF |
 | `scripts/` | Utilities: `batch_run.js` (run `report.js` on many workbooks), `inspect.js` (dump a workbook's setup) |
 | `tests/` | Test suite (`npm test`); see `docs/testing.md` |

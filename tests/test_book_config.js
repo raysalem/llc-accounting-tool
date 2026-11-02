@@ -240,6 +240,23 @@ function testFindingBooks() {
     writeFile('reg/books.toml', 'acme = "../direct/acme.book.toml"\n');
     check('Registry ./books.toml: id resolves', loadBook('acme', { cwd: path.join(TMP, 'reg'), env: {} }).id === 'acme');
 
+    // llc-site.toml: [site] + [books]; preferred over books.toml in the same folder
+    const { readSiteConfig } = require('../lib/book');
+    writeFile('site/llc-site.toml', '[site]\nport = 5171\n\n[books]\nacme = "../direct/acme.book.toml"\n');
+    writeFile('site/books.toml', 'other = "nowhere.book.toml"\n');
+    check('llc-site.toml: id resolves (preferred over books.toml)', loadBook('acme', { cwd: path.join(TMP, 'site'), env: {} }).id === 'acme');
+    const siteCfg = readSiteConfig(path.join(TMP, 'site/llc-site.toml'));
+    check('llc-site.toml: port read', siteCfg.site.port === 5171);
+    check('llc-site.toml: book path is absolute, relative to the file', siteCfg.books.get('acme') === path.join(TMP, 'direct/acme.book.toml'));
+    writeFile('site2/llc-site.toml', '[books]\nacme = "../direct/acme.book.toml"\n');
+    check('llc-site.toml: port defaults to 5170', readSiteConfig(path.join(TMP, 'site2/llc-site.toml')).site.port === 5170);
+    writeFile('bad/llc-site.toml', '[site]\nport = "80"\nhost = "0.0.0.0"\n\n[book]\nacme = 1\n');
+    rejects('llc-site.toml: every problem listed with a fix', () => readSiteConfig(path.join(TMP, 'bad/llc-site.toml')),
+        'Unknown section "book"', 'Did you mean "books"', '"host" is not a setting', 'port must be a number', 'No [books] section');
+    writeFile('bad2/llc-site.toml', '[site]\nport = 80\n[books]\nacme = 3\n');
+    rejects('llc-site.toml: port range and non-path entries', () => readSiteConfig(path.join(TMP, 'bad2/llc-site.toml')),
+        'out of range', '"acme" must be the path');
+
     // registry named by LLC_BOOKS, from a different cwd
     const regFile = writeFile('elsewhere/my-books.toml', 'acme = "../direct/acme.book.toml"\nacmee = "../direct/acme.book.toml"\n');
     check('Registry via LLC_BOOKS: id resolves from any folder', loadBook('acme', { cwd: TMP, env: { LLC_BOOKS: regFile } }).id === 'acme');

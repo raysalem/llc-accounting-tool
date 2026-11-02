@@ -19,5 +19,10 @@ module.exports = [
             'prefer-const': ['error', { destructuring: 'all' }],
         },
     },
+    {
+        // The local site's page runs in the browser.
+        files: ['lib/site/public/**/*.js'],
+        languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
+    },
     { ignores: ['node_modules/', 'coverage/'] },
 ];

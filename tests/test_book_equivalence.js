@@ -277,6 +277,27 @@ async function main() {
     const notNeeded = run(['--book', path.join(noPrivDir, 'equiv.book.toml'), '--pl'], noPrivDir);
     check('Private file named but missing, no 1099 asked: runs normally', notNeeded.code === 0, notNeeded.all);
 
+    // --json: the same numbers as the console, as data; never a tax ID
+    const jsonFile = path.join(taxDir, 'out.json');
+    const jr = run(['--book', bookFile, '--1099', '--json', jsonFile], taxDir);
+    const jsonText = fs.existsSync(jsonFile) ? fs.readFileSync(jsonFile, 'utf8') : '';
+    check('--json: file written', jsonText.length > 0, jr.all);
+    if (jsonText) {
+        const j = JSON.parse(jsonText);
+        const by = (rows, label) => (rows.find(r => r.label === label) || {}).value;
+        const total = rows => rows.reduce((a, r) => a + r.value, 0);
+        check('--json: net income 2,050', Math.abs(j.netIncome - 2050) < 0.005, String(j.netIncome));
+        check('--json: Checking 3,200', Math.abs(by(j.assets, 'Checking') - 3200) < 0.005, JSON.stringify(j.assets.map(r => [r.label, r.value])));
+        check('--json: Credit Card 250', Math.abs(by(j.liabilities, 'Credit Card') - 250) < 0.005);
+        check('--json: A = L + E = 4,200', Math.abs(total(j.assets) - 4200) < 0.005 && Math.abs(total(j.liabilities) + total(j.equity) - 4200) < 0.005);
+        check('--json: equation check ok', j.checks.find(c => c.id === 'equation').ok);
+        check('--json: console net income matches', valueFor(jr.out, '=== NET INCOME') === undefined || jr.all.includes('NET INCOME: 2,050.00'), jr.out);
+        const acme = j.review1099.find(r => r.vendor === 'Acme Plumbing');
+        check('--json: 1099 review has Acme Plumbing with tax ID on file', acme && acme.hasTaxId === true, JSON.stringify(j.review1099));
+        check('--json: no tax ID in the file', !jsonText.includes(FAKE_COMPANY_TIN) && !jsonText.includes(FAKE_VENDOR_TIN));
+        check('--json: sheets listed with short names', j.sheets.length >= 2 && j.sheets.every(s => s.name && s.short), JSON.stringify(j.sheets));
+    }
+
     // The CLI --opening-balances wins over the book's opening_balances
     const other = path.join(taxDir, 'other-closing.toml');
     fs.writeFileSync(other, 'year = 2025\n[accounts]\nChecking = 1\n');

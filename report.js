@@ -7,7 +7,7 @@
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
-const { originalConsole, captureConsole } = require('./lib/logger');
+const { originalConsole, captureConsole, logBuffer } = require('./lib/logger');
 const { parseArgs, parseOptionValue } = require('./lib/cli');
 const book = require('./lib/book');
 const { resolveShortcut } = require('./lib/util');
@@ -25,6 +25,7 @@ const { printStatements } = require('./lib/report/print-statements');
 const { printDiagnostics } = require('./lib/report/diagnostics');
 const { writeSummaryAndSave } = require('./lib/report/summary');
 const { buildStamp, stampLines } = require('./lib/report/stamp');
+const { writeExport } = require('./lib/report/export-json');
 
 async function updateFinancials() {
     const args = process.argv.slice(2); // as given: this is what the report stamp records
@@ -39,6 +40,9 @@ async function updateFinancials() {
     }
     const opts = parseArgs(runArgs);
     if (opts.help) return;
+    // --json (the local site) is print-only unless --save is typed on this command line:
+    // a --save in the book's default_flags must not write files on every recompute.
+    if (opts.jsonPath && !args.includes('--save')) opts.saveFlag = false;
     const { showDebug, taxYear, THRESHOLD_1099_NEC } = opts;
 
     // The private file (tax IDs) is only read when a 1099 report is asked for.
@@ -145,6 +149,7 @@ async function updateFinancials() {
     await buildReports(ctx);
     await printStatements(ctx);
     await printDiagnostics(ctx);
+    if (opts.jsonPath) writeExport(ctx, opts.jsonPath, logBuffer);
 
     if (!ctx.saveFlag) {
         console.log('\n(Run with --save to update the Excel file)');

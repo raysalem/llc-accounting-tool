@@ -22,3 +22,6 @@ tests/debug_*.txt
 books.toml
 *.private.toml
 !examples/example.private.toml
+
+# The site registry names real books
+llc-site.toml
