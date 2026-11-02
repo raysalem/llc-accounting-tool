@@ -1,18 +1,32 @@
 name: Tests
 
+# Every push to any branch, every pull request, and a manual "Run workflow" button.
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+# The repo is private: a newer push to the same branch cancels the older run to save minutes.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Node ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
 
     strategy:
+      fail-fast: false
       matrix:
+        os: [ ubuntu-latest ]
         node-version: [ '20.x', '22.x' ]
+        include:
+          # Ray runs the tool on Windows (paths, CRLF, Excel files): one Windows run.
+          - os: windows-latest
+            node-version: '22.x'
 
     steps:
     - uses: actions/checkout@v4
